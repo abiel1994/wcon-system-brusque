@@ -41,28 +41,62 @@ const DB = {
   acessoTabelas: {},
 
   /* ── Tabelas de comissão ───────────────────────────────────────────────── */
+  // Fallback só usado se o Supabase falhar ao carregar — em uso normal, essas
+  // 23 linhas vêm do banco (tabela tabelas_comissao) com os mesmos valores.
   tabelas: [
-    { id:'SM',    nome:'Select Mais / SMA',  ref:'REF 3',     parcelas:[0.45,0.45,0.25,0.20,0.20,0.15,0,0,0,0,0,0], ativo:true },
-    { id:'P01',   nome:'P01 / P02',          ref:'REF 3',     parcelas:[0.45,0.45,0.25,0.20,0.20,0.15,0,0,0,0,0,0], ativo:true },
-    { id:'TSS',   nome:'TSS',                ref:'REF 3',     parcelas:[0.45,0.45,0.25,0.20,0.20,0.15,0,0,0,0,0,0], ativo:true },
-    { id:'PSE',   nome:'PSE / ASE / PC2',    ref:'REF 3',     parcelas:[0.45,0.45,0.25,0.20,0.20,0.15,0,0,0,0,0,0], ativo:true },
-    { id:'SEP',   nome:'SEP',                ref:'REF 3',     parcelas:[0.45,0.40,0.25,0.20,0.20,0.15,0,0,0,0,0,0], ativo:true },
-    { id:'SPF',   nome:'SPF',                ref:'REF 3',     parcelas:[0.45,0.45,0.25,0.20,0.20,0.15,0,0,0,0,0,0], ativo:true },
-    { id:'BA',    nome:'BA / BI1 / BI2',     ref:'REF 2',     parcelas:[0.40,0.30,0.30,0.25,0.25,0,0,0,0,0,0,0], ativo:true },
-    { id:'TPF',   nome:'TPF',                ref:'REF 2',     parcelas:[0.40,0.30,0.30,0.25,0.25,0,0,0,0,0,0,0], ativo:true },
-    { id:'ETA',   nome:'EI1 / ETA / SUE',    ref:'REF 2.1',   parcelas:[0.25,0.25,0.25,0.25,0.25,0.25,0,0,0,0,0,0], ativo:true },
-    { id:'MB',    nome:'Moto / Serviço',     ref:'REF 1',     parcelas:[0.40,0.30,0.15,0.15,0.10,0.10,0,0,0,0,0,0], ativo:true },
-    { id:'APE',   nome:'APE / TP / TEP',     ref:'REF 1.1',   parcelas:[0.15,0.15,0.15,0.15,0.15,0.15,0.15,0.15,0,0,0,0], ativo:true },
-    { id:'ANT01', nome:'Antigo REF 01',       ref:'ANTIGO 01', parcelas:[0.175,0.175,0.175,0.175,0,0,0,0,0,0,0,0], ativo:true },
-    { id:'ANT02', nome:'Antigo REF 02',       ref:'ANTIGO 02', parcelas:[0.12,0.12,0.12,0,0,0,0,0,0,0,0,0], ativo:true },
+    { id:'SM',   nome:'Select Mais',                     ref:'REF7', parcelas:[0.40,0.40,0.25,0.25,0.00,0.00,0.00,0.00,0.00,0.40], ativo:true },
+    { id:'P01',  nome:'Tabela PAN 8025',                  ref:'REF7', parcelas:[0.40,0.40,0.25,0.25,0.00,0.00,0.00,0.00,0.00,0.40], ativo:true },
+    { id:'P02',  nome:'Tabela PAN 8029',                  ref:'REF7', parcelas:[0.40,0.40,0.25,0.25,0.00,0.00,0.00,0.00,0.00,0.40], ativo:true },
+    { id:'SMA',  nome:'Select Mais Agibank',               ref:'REF7', parcelas:[0.40,0.40,0.25,0.25,0.00,0.00,0.00,0.00,0.00,0.40], ativo:true },
+    { id:'BA',   nome:'Tabela B / BA',                     ref:'REF6', parcelas:[0.30,0.25,0.25,0.25,0.25,0.00,0.00,0.00,0.00,0.30], ativo:true },
+    { id:'BI1',  nome:'Tabela B / BI1',                    ref:'REF6', parcelas:[0.30,0.25,0.25,0.25,0.25,0.00,0.00,0.00,0.00,0.30], ativo:true },
+    { id:'BI2',  nome:'Tabela B / BI2',                    ref:'REF6', parcelas:[0.30,0.25,0.25,0.25,0.25,0.00,0.00,0.00,0.00,0.30], ativo:true },
+    { id:'TSS',  nome:'Tabela Select Smart',                ref:'REF7', parcelas:[0.40,0.40,0.25,0.25,0.00,0.00,0.00,0.00,0.00,0.40], ativo:true },
+    { id:'PSE',  nome:'PSE',                                ref:'REF7', parcelas:[0.40,0.40,0.25,0.25,0.00,0.00,0.00,0.00,0.00,0.40], ativo:true },
+    { id:'ASE',  nome:'Auto Select Estendido',               ref:'REF7', parcelas:[0.40,0.40,0.25,0.25,0.00,0.00,0.00,0.00,0.00,0.40], ativo:true },
+    { id:'APE',  nome:'Tabela Parcelinha Auto',              ref:'REF4', parcelas:[0.10,0.10,0.10,0.10,0.10,0.10,0.10,0.10,0.10,0.10], ativo:true },
+    { id:'MOTO', nome:'Tabela Moto',                        ref:'REF5', parcelas:[0.30,0.20,0.15,0.15,0.15,0.15,0.10,0.00,0.00,0.20], ativo:true },
+    { id:'SERV', nome:'Tabela Serviços',                    ref:'REF5', parcelas:[0.30,0.20,0.15,0.15,0.15,0.15,0.10,0.00,0.00,0.20], ativo:true },
+    { id:'TP',   nome:'TP',                                  ref:'REF4', parcelas:[0.10,0.10,0.10,0.10,0.10,0.10,0.10,0.10,0.10,0.10], ativo:true },
+    { id:'PC2',  nome:'PC2',                                 ref:'REF6', parcelas:[0.30,0.25,0.25,0.25,0.25,0.00,0.00,0.00,0.00,0.30], ativo:true },
+    { id:'TEP',  nome:'Tabela Estendido Prime',              ref:'REF4', parcelas:[0.10,0.10,0.10,0.10,0.10,0.10,0.10,0.10,0.10,0.10], ativo:true },
+    { id:'SEP',  nome:'SEP',                                 ref:'REF7', parcelas:[0.40,0.40,0.25,0.25,0.00,0.00,0.00,0.00,0.00,0.40], ativo:true },
+    { id:'TPF',  nome:'Parcelinha Franquias',                ref:'REF6', parcelas:[0.30,0.25,0.25,0.25,0.25,0.00,0.00,0.00,0.00,0.30], ativo:true },
+    { id:'SPF',  nome:'Select Pesados Franquias',            ref:'REF7', parcelas:[0.40,0.40,0.25,0.25,0.00,0.00,0.00,0.00,0.00,0.40], ativo:true },
+    { id:'E1',   nome:'Plano Estendido 1% até 600mil',       ref:'REF3', parcelas:[0.22,0.22,0.22,0.22,0.22,0.22,0.00,0.00,0.00,0.00], ativo:true },
+    { id:'SUE',  nome:'Super Crédito Estendido',             ref:'REF3', parcelas:[0.22,0.22,0.22,0.22,0.22,0.22,0.00,0.00,0.00,0.00], ativo:true },
+    { id:'ETA',  nome:'Plano Estendido 1% Automóvel',        ref:'REF3', parcelas:[0.22,0.22,0.22,0.22,0.22,0.22,0.00,0.00,0.00,0.00], ativo:true },
+    { id:'RD',   nome:'Black Friday 2024',                   ref:'REF7', parcelas:[0.40,0.40,0.25,0.25,0.00,0.00,0.00,0.00,0.00,0.40], ativo:true },
   ],
 
-  /* ── Tabela de remuneração do gestor ───────────────────────────────────── */
-  tabelaGestor: {
-    ref3:  [0.20, 0.20],
-    ref1:  [0.10, 0.10],
-    inicio: '2026-04',
-  },
+  /* ── Comissão de gerência por produto (com/sem líder de equipe acima) ────── */
+  // Fallback só usado se o Supabase falhar — normalmente vem da tabela
+  // tabelas_comissao_gerencia. Só as 3 primeiras parcelas de cada venda.
+  tabelasComissaoGerencia: [
+    { tabela_id:'SM',   comSupervisor:[0.10,0.10,0.10], semSupervisor:[0.17,0.17,0.16] },
+    { tabela_id:'P01',  comSupervisor:[0.10,0.10,0.10], semSupervisor:[0.17,0.17,0.16] },
+    { tabela_id:'P02',  comSupervisor:[0.10,0.10,0.10], semSupervisor:[0.17,0.17,0.16] },
+    { tabela_id:'SMA',  comSupervisor:[0.10,0.10,0.10], semSupervisor:[0.17,0.17,0.16] },
+    { tabela_id:'BA',   comSupervisor:[0.07,0.07,0.07], semSupervisor:[0.17,0.17,0.16] },
+    { tabela_id:'BI1',  comSupervisor:[0.07,0.07,0.07], semSupervisor:[0.17,0.17,0.16] },
+    { tabela_id:'BI2',  comSupervisor:[0.07,0.07,0.07], semSupervisor:[0.17,0.17,0.16] },
+    { tabela_id:'TSS',  comSupervisor:[0.10,0.10,0.10], semSupervisor:[0.17,0.17,0.16] },
+    { tabela_id:'PSE',  comSupervisor:[0.10,0.10,0.10], semSupervisor:[0.17,0.17,0.16] },
+    { tabela_id:'ASE',  comSupervisor:[0.10,0.10,0.10], semSupervisor:[0.17,0.17,0.16] },
+    { tabela_id:'APE',  comSupervisor:[0.05,0.05,0.05], semSupervisor:[0.09,0.08,0.08] },
+    { tabela_id:'MOTO', comSupervisor:[0.07,0.07,0.07], semSupervisor:[0.14,0.13,0.13] },
+    { tabela_id:'SERV', comSupervisor:[0.07,0.07,0.07], semSupervisor:[0.14,0.13,0.13] },
+    { tabela_id:'TP',   comSupervisor:[0.05,0.05,0.05], semSupervisor:[0.09,0.08,0.08] },
+    { tabela_id:'PC2',  comSupervisor:[0.07,0.07,0.07], semSupervisor:[0.17,0.17,0.16] },
+    { tabela_id:'TEP',  comSupervisor:[0.05,0.05,0.05], semSupervisor:[0.09,0.08,0.08] },
+    { tabela_id:'SEP',  comSupervisor:[0.10,0.10,0.10], semSupervisor:[0.17,0.17,0.16] },
+    { tabela_id:'TPF',  comSupervisor:[0.07,0.07,0.07], semSupervisor:[0.17,0.17,0.16] },
+    { tabela_id:'SPF',  comSupervisor:[0.10,0.10,0.10], semSupervisor:[0.17,0.17,0.16] },
+    { tabela_id:'E1',   comSupervisor:[0.05,0.05,0.05], semSupervisor:[0.09,0.08,0.08] },
+    { tabela_id:'SUE',  comSupervisor:[0.05,0.05,0.05], semSupervisor:[0.09,0.08,0.08] },
+    { tabela_id:'ETA',  comSupervisor:[0.05,0.05,0.05], semSupervisor:[0.09,0.08,0.08] },
+    { tabela_id:'RD',   comSupervisor:[0.10,0.10,0.10], semSupervisor:[0.17,0.17,0.16] },
+  ],
 
   fechamentosGestor: [],
   nextFechGestorId: 1,
@@ -85,32 +119,29 @@ const DB = {
    LEGENDA DE SIGLAS
    ═══════════════════════════════════════════════════════════════════════════ */
 const SIGLA_LEGENDA = [
-  { sigla:'SM',    nome:'Select Mais' },
-  { sigla:'P01',   nome:'Tabela PAN 8025' },
-  { sigla:'P02',   nome:'Tabela PAN 8029' },
-  { sigla:'SMA',   nome:'Select Mais Agibank' },
-  { sigla:'BA',    nome:'Tabela B Auto' },
-  { sigla:'B',     nome:'Tabela B' },
-  { sigla:'TSS',   nome:'Tabela Select Smart' },
-  { sigla:'PE2',   nome:'Plano Estendido com 2% (Imóvel e Auto)' },
-  { sigla:'BI1',   nome:'Tabela Imóvel até 240 mil' },
-  { sigla:'BI2',   nome:'Tabela Imóvel acima de 250 mil' },
-  { sigla:'TP',    nome:'Tabela Parcelinha' },
-  { sigla:'TEP',   nome:'Tabela Estendido Prime' },
-  { sigla:'APE',   nome:'Tabela Parcelinha Auto' },
-  { sigla:'P12',   nome:'Tabela Plano Estendido Antecipado 12x' },
-  { sigla:'PSE',   nome:'Select Estendido' },
-  { sigla:'PC2',   nome:'Tabela Pesados com Atenção 2%' },
-  { sigla:'SEP',   nome:'Tabela Select Estendido Prime' },
-  { sigla:'ASE',   nome:'Auto Select Estendido' },
-  { sigla:'SPF',   nome:'Select Pesados Franquias' },
-  { sigla:'TPF',   nome:'Parcelinha Franquias' },
-  { sigla:'MB',    nome:'Tabela Moto e Serviços' },
-  { sigla:'E1',    nome:'Plano Estendido com 1% até 600 mil' },
-  { sigla:'SUE',   nome:'Super Crédito Estendido' },
-  { sigla:'ETA',   nome:'Plano Estendido 1% Automóvel' },
-  { sigla:'ANT01', nome:'Tabela Antiga — Modelo 01 (descontinuada)' },
-  { sigla:'ANT02', nome:'Tabela Antiga — Modelo 02 (descontinuada)' },
+  { sigla:'SM',   nome:'Select Mais' },
+  { sigla:'P01',  nome:'Tabela PAN 8025' },
+  { sigla:'P02',  nome:'Tabela PAN 8029' },
+  { sigla:'SMA',  nome:'Select Mais Agibank' },
+  { sigla:'BA',   nome:'Tabela B / BA' },
+  { sigla:'BI1',  nome:'Tabela B / BI1' },
+  { sigla:'BI2',  nome:'Tabela B / BI2' },
+  { sigla:'TSS',  nome:'Tabela Select Smart' },
+  { sigla:'PSE',  nome:'PSE' },
+  { sigla:'ASE',  nome:'Auto Select Estendido' },
+  { sigla:'APE',  nome:'Tabela Parcelinha Auto' },
+  { sigla:'MOTO', nome:'Tabela Moto' },
+  { sigla:'SERV', nome:'Tabela Serviços' },
+  { sigla:'TP',   nome:'TP' },
+  { sigla:'PC2',  nome:'PC2' },
+  { sigla:'TEP',  nome:'Tabela Estendido Prime' },
+  { sigla:'SEP',  nome:'SEP' },
+  { sigla:'TPF',  nome:'Parcelinha Franquias' },
+  { sigla:'SPF',  nome:'Select Pesados Franquias' },
+  { sigla:'E1',   nome:'Plano Estendido 1% até 600mil' },
+  { sigla:'SUE',  nome:'Super Crédito Estendido' },
+  { sigla:'ETA',  nome:'Plano Estendido 1% Automóvel' },
+  { sigla:'RD',   nome:'Black Friday 2024' },
 ];
 function legendaSigla(sigla) {
   return SIGLA_LEGENDA.find(s => s.sigla === sigla)?.nome || '';
@@ -4694,14 +4725,13 @@ function simularTabela() {
 /* ═══════════════════════════════════════════════════════════════════════════
    16. MÓDULO: REMUNERAÇÃO DO GESTOR
    ═══════════════════════════════════════════════════════════════════════════ */
-const TABELAS_REF1 = ['MB', 'APE', 'ANT01', 'ANT02'];
-
+// Usado só pra agrupar tabelas em "Prime" (maior %) vs "Básica" (menor %) no
+// demonstrativo do gestor — usa o total da regra "sem líder de equipe"
+// (tabelas_comissao_gerencia) como referência de qual produto rende mais.
 function getPctGestor(tabId) {
-  const tab = DB.tabelas.find(t => t.id === tabId);
-  const ref = (tab?.ref || '').toUpperCase().replace(/\s+/g, '');
-  if (ref === 'REF1B') return 0.20;
-  if (ref === 'REF2B') return 0.10;
-  return TABELAS_REF1.includes(tabId) ? 0.10 : 0.20;
+  const regra = DB.tabelasComissaoGerencia.find(g => g.tabela_id === tabId);
+  if (!regra) return 0;
+  return regra.semSupervisor.reduce((a, p) => a + p, 0);
 }
 
 function calcRemuneracaoMes(mes) {
@@ -4711,11 +4741,21 @@ function calcRemuneracaoMes(mes) {
   DB.vendas.forEach(v => {
     if (v.status === 'cancelado') return;
     const tab = DB.tabelas.find(t => t.id === v.tabela);
-    const pct = getPctGestor(v.tabela);
+    const regra = DB.tabelasComissaoGerencia.find(g => g.tabela_id === v.tabela);
+    if (!regra) return; // tabela sem regra de gerência cadastrada — não gera comissão de gerência
 
-    calcParcelas(v).forEach(p => {
-      if (!p.ativa || p.n > 2) return;
+    const vend = DB.vendedores.find(x => x.id === v.vendedor);
+    const temLider = !!(vend && vend.liderId); // tem líder de equipe acima dele?
+    const pcts = temLider ? regra.comSupervisor : regra.semSupervisor;
+
+    calcParcelas(v).forEach((p, i) => {
+      if (!p.ativa || p.n > 3) return; // regra de gerência só vale nas 3 primeiras parcelas
       if (p.mesRecebimento !== mes) return;
+      const statusParcCliente = v.parcelas[i]?.s;
+      if (p.n > 1 && statusParcCliente !== 'pago') return;
+
+      const pct = pcts[p.n - 1];
+      if (!pct) return;
 
       const item = {
         cliente:         v.cliente,
@@ -4730,7 +4770,7 @@ function calcRemuneracaoMes(mes) {
         dvenda:          v.dvenda,
         dataVencCliente: p.dataVencCliente,
         dataPgto:        p.dataPgto,
-        ref:             tab?.ref || (TABELAS_REF1.includes(v.tabela) ? 'REF 1' : 'REF 3'),
+        ref:             temLider ? 'Com líder de equipe' : 'Sem líder de equipe',
       };
 
       if (p.n === 1) producao.push(item);
