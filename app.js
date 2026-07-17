@@ -5944,6 +5944,18 @@ ${renderModaisFunil()}
 `;
 }
 
+function toggleFunilDetalhe(idBase) {
+  const detalhe = document.getElementById(idBase + '-detalhe');
+  const seta = document.getElementById(idBase + '-seta');
+  if (!detalhe || !seta) return;
+  const aberto = detalhe.style.display === 'block';
+  detalhe.style.display = aberto ? 'none' : 'block';
+  seta.textContent = aberto ? '▾' : '▴';
+  seta.style.background = aberto ? '#fff' : '#1A1D24';
+  seta.style.color = aberto ? '#6B7280' : '#fff';
+  seta.style.borderColor = aberto ? '#E8EAF0' : '#1A1D24';
+}
+
 function renderPainelExecutivoFunil() {
   const leads = DB.leadsFunil;
   const hojeStr = today();
@@ -6012,7 +6024,7 @@ function renderPainelExecutivoFunil() {
   const gargalo = todasTransicoes.length > 0 ? todasTransicoes.reduce((pior, t) => t.pct < pior.pct ? t : pior) : null;
   const pontoForte = todasTransicoes.length > 0 ? todasTransicoes.reduce((melhor, t) => t.pct > melhor.pct ? t : melhor) : null;
 
-  function montarFunilHtml(etapas, corBase) {
+  function montarFunilHtml(etapas, corBase, idFunil) {
     const topo = Math.max(etapas[0].qtd, 1);
     const cores = corBase === 'azul'
       ? ['#378ADD','#185FA5','#0C447C','#042C53']
@@ -6026,18 +6038,27 @@ function renderPainelExecutivoFunil() {
       const ultimo = i === etapas.length-1;
       const clip = ultimo ? '' : `clip-path:polygon(0 0,100% 0,${94-i*2}% 100%,${6+i*2}% 100%);`;
       const radius = ultimo ? 'border-radius:0 0 6px 6px;' : '';
+      const idBase = `funil-${idFunil}-${i}`;
+      const corPct = pctAnterior === null ? '#6B7280' : pctAnterior >= 70 ? '#639922' : pctAnterior >= 40 ? '#BA7517' : '#C8392B';
       return `
         <div style="width:${largura}px;${clip}${radius}background:${cores[i]};padding:10px 4px;text-align:center;margin:0 auto;overflow:hidden">
           <div style="font-size:8px;color:${textoClaro};font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${et.label}</div>
-          <div style="font-size:18px;font-weight:700;font-family:var(--mono);color:#fff">${et.qtd}</div>
+          <div style="font-size:18px;font-weight:700;font-family:'DM Mono',monospace;color:#fff">${et.qtd}</div>
         </div>
-        ${!ultimo ? (() => {
-          const corPct = pctAnterior === null ? 'var(--text2)' : pctAnterior >= 70 ? 'var(--green)' : pctAnterior >= 40 ? 'var(--amber)' : 'var(--brand)';
-          return `<div style="display:flex;align-items:center;justify-content:center;gap:8px;margin:4px 0">
-            <span style="font-size:15px;font-weight:800;font-family:var(--mono);color:${corPct}">${pctAnterior!==null ? pctAnterior+'%' : '—'}</span>
-            <span style="font-size:9px;color:var(--text3)">acum. ${pctTopo}%</span>
-          </div>`;
-        })() : ''}
+        ${!ultimo ? `
+        <div id="${idBase}-seta" onclick="toggleFunilDetalhe('${idBase}')" style="width:22px;height:22px;border-radius:50%;background:#fff;border:1px solid #E8EAF0;display:flex;align-items:center;justify-content:center;font-size:11px;color:#6B7280;margin:2px auto;cursor:pointer;user-select:none">▾</div>
+        <div id="${idBase}-detalhe" style="display:none;gap:6px;margin:4px auto 6px;background:#fff;border:1px solid #E8EAF0;border-radius:6px;padding:8px 10px;width:160px">
+          <div style="display:flex;gap:6px">
+            <div style="text-align:center;flex:1;border-right:1px solid #E8EAF0;padding-right:6px">
+              <div style="font-size:14px;font-weight:800;font-family:'DM Mono',monospace;color:${corPct}">${pctAnterior!==null ? pctAnterior+'%' : '—'}</div>
+              <div style="font-size:7px;color:#6B7280;text-transform:uppercase;letter-spacing:0.3px;margin-top:1px">da etapa<br>anterior</div>
+            </div>
+            <div style="text-align:center;flex:1;padding-left:2px">
+              <div style="font-size:14px;font-weight:800;font-family:'DM Mono',monospace;color:#1A1D24">${pctTopo}%</div>
+              <div style="font-size:7px;color:#6B7280;text-transform:uppercase;letter-spacing:0.3px;margin-top:1px">desde a<br>entrada</div>
+            </div>
+          </div>
+        </div>` : ''}
       `;
     }).join('');
   }
@@ -6165,14 +6186,15 @@ ${leadsParados3dias.length > 0 ? `
 <div class="card">
   <div class="card-body">
     <div class="form-divider">Conversão do funil (leads ativos, contagem acumulada por etapa)</div>
+    <div style="font-size:9px;color:#9CA3AF;margin-bottom:10px">Clique na seta ▾ entre as etapas pra ver o percentual de conversão</div>
     <div style="display:flex;gap:24px;flex-wrap:wrap;justify-content:center;padding:8px 0">
       <div style="flex:1;min-width:220px;max-width:280px">
         <div style="font-size:9px;font-weight:700;color:var(--text3);letter-spacing:1.2px;text-transform:uppercase;margin-bottom:10px;text-align:center">Funil de captação</div>
-        ${montarFunilHtml(funilCaptacao, 'azul')}
+        ${montarFunilHtml(funilCaptacao, 'azul', 'captacao')}
       </div>
       <div style="flex:1;min-width:220px;max-width:280px">
         <div style="font-size:9px;font-weight:700;color:var(--text3);letter-spacing:1.2px;text-transform:uppercase;margin-bottom:10px;text-align:center">Funil de fechamento</div>
-        ${montarFunilHtml(funilFechamento, 'verde')}
+        ${montarFunilHtml(funilFechamento, 'verde', 'fechamento')}
       </div>
     </div>
   </div>
@@ -6183,17 +6205,17 @@ ${gargalo && pontoForte ? `
   <div class="card-body">
     <div class="form-divider">Diagnóstico do funil</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px">
-      <div style="background:var(--red-dim);border:1px solid var(--brand-border);border-radius:8px;padding:14px">
-        <div style="font-size:9px;font-weight:700;color:var(--brand);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">⚠ Gargalo — pior conversão</div>
-        <div style="font-size:13px;color:var(--text);margin-bottom:4px"><strong>${gargalo.funil}:</strong> ${gargalo.de} → ${gargalo.para}</div>
-        <div style="font-size:20px;font-weight:800;font-family:var(--mono);color:var(--brand)">${gargalo.pct}%</div>
-        <div style="font-size:10px;color:var(--text3);margin-top:2px">${gargalo.qtdPara} de ${gargalo.qtdDe} avançaram — é aqui que mais se perde lead</div>
+      <div style="background:#FCEBEB;border:1px solid #E24B4A;border-radius:8px;padding:14px">
+        <div style="font-size:9px;font-weight:700;color:#C8392B;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">⚠ Gargalo — pior conversão</div>
+        <div style="font-size:13px;color:#1A1D24;margin-bottom:4px"><strong>${gargalo.funil}:</strong> ${gargalo.de} → ${gargalo.para}</div>
+        <div style="font-size:20px;font-weight:800;font-family:'DM Mono',monospace;color:#C8392B">${gargalo.pct}%</div>
+        <div style="font-size:10px;color:#9CA3AF;margin-top:2px">${gargalo.qtdPara} de ${gargalo.qtdDe} avançaram — é aqui que mais se perde lead</div>
       </div>
-      <div style="background:var(--green-dim);border:1px solid var(--green-glow);border-radius:8px;padding:14px">
-        <div style="font-size:9px;font-weight:700;color:var(--green);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">✓ Ponto forte — melhor conversão</div>
-        <div style="font-size:13px;color:var(--text);margin-bottom:4px"><strong>${pontoForte.funil}:</strong> ${pontoForte.de} → ${pontoForte.para}</div>
-        <div style="font-size:20px;font-weight:800;font-family:var(--mono);color:var(--green)">${pontoForte.pct}%</div>
-        <div style="font-size:10px;color:var(--text3);margin-top:2px">${pontoForte.qtdPara} de ${pontoForte.qtdDe} avançaram — etapa mais eficiente do funil</div>
+      <div style="background:#EAF3DE;border:1px solid #639922;border-radius:8px;padding:14px">
+        <div style="font-size:9px;font-weight:700;color:#639922;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">✓ Ponto forte — melhor conversão</div>
+        <div style="font-size:13px;color:#1A1D24;margin-bottom:4px"><strong>${pontoForte.funil}:</strong> ${pontoForte.de} → ${pontoForte.para}</div>
+        <div style="font-size:20px;font-weight:800;font-family:'DM Mono',monospace;color:#639922">${pontoForte.pct}%</div>
+        <div style="font-size:10px;color:#9CA3AF;margin-top:2px">${pontoForte.qtdPara} de ${pontoForte.qtdDe} avançaram — etapa mais eficiente do funil</div>
       </div>
     </div>
   </div>
