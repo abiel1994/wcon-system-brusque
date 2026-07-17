@@ -584,16 +584,19 @@ const Router = {
     dashboard:     { label: 'Dashboard',     icon: '◈', section: 'visao', render: renderDashboard },
     vendedores:    { label: 'Vendedores',    icon: '◇', section: 'cadastro', render: renderVendedores },
     clientes:      { label: 'Clientes',      icon: '○', section: 'cadastro', render: renderClientes },
-    relatorio:     { label: 'Relatórios',    icon: '▦', section: 'comercial', render: renderRelatorio },
-    comissao:      { label: 'Comissões',     icon: '◆', section: 'comercial', render: renderComissao },
-    inadimplencia: { label: 'Inadimplência', icon: '▲', section: 'comercial', render: renderInadimplencia },
-    estornos:      { label: 'Estornos',      icon: '✕', section: 'comercial', render: renderEstornos },
-    trabalho:      { label: 'Relatório de Trabalho', icon: '', section: 'comercial', render: renderRelatorioTrabalho },
+
     funil:         { label: 'Funil de Atendimento', icon: '', section: 'comercial', render: renderFunil },
-    painelExecutivo: { label: 'Painel Executivo', icon: '', section: 'gestor', render: renderPainelExecutivoFunil },
     agendaFunil:   { label: 'Agenda', icon: '', section: 'comercial', render: renderAgendaFunil },
+    relatorio:     { label: 'Relatórios',    icon: '▦', section: 'comercial', render: renderRelatorio },
+    trabalho:      { label: 'Relatório de Trabalho', icon: '', section: 'comercial', render: renderRelatorioTrabalho },
+
+    comissao:      { label: 'Comissões',     icon: '◆', section: 'financeiro', render: renderComissao },
+    remuneracao:   { label: 'Comissão WCON', icon: '★', section: 'financeiro', render: renderRemuneracao },
+    inadimplencia: { label: 'Inadimplência', icon: '▲', section: 'financeiro', render: renderInadimplencia },
+    estornos:      { label: 'Estornos',      icon: '✕', section: 'financeiro', render: renderEstornos },
+
+    painelExecutivo: { label: 'Painel Executivo', icon: '', section: 'gestor', render: renderPainelExecutivoFunil },
     leadsPainel:   { label: 'Leads', icon: '', section: 'gestor', render: renderLeadsPainelFunil },
-    remuneracao:   { label: 'Comissão WCON', icon: '★', section: 'gestor', render: renderRemuneracao },
 
     tabelas:       { label: 'Tabelas',       icon: '≡', section: 'configuracao', render: renderTabelas },
     configuracoes: { label: 'Configurações', icon: '⊙', section: 'configuracao', render: renderConfiguracoes },
@@ -1124,13 +1127,14 @@ function buildSidebar() {
     visao:        'Visão geral',
     cadastro:     'Cadastros',
     comercial:    'Comercial',
-    gestor:       'Gestor',
+    financeiro:   'Financeiro',
+    gestor:       'Gestão',
     configuracao: 'Sistema',
   };
 
   const visibles = isG
-    ? ['dashboard','vendedores','clientes','relatorio','comissao','inadimplencia','estornos','trabalho','funil','agendaFunil','painelExecutivo','leadsPainel','remuneracao','tabelas','configuracoes']
-    : ['dashboard','relatorio','comissao','inadimplencia','estornos','trabalho','funil','agendaFunil','tabelas'];
+    ? ['dashboard','vendedores','clientes','funil','agendaFunil','relatorio','trabalho','comissao','remuneracao','inadimplencia','estornos','painelExecutivo','leadsPainel','tabelas','configuracoes']
+    : ['dashboard','funil','agendaFunil','relatorio','trabalho','comissao','inadimplencia','estornos','tabelas'];
 
   const badges = {
     inadimplencia: DB.vendas.filter(v => v.status === 'inadimplente' && (isG ? true : vendasNoEscopo(u).some(x=>x.id===v.id))).length,
