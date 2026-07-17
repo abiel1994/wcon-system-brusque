@@ -5850,7 +5850,7 @@ function renderFunil() {
   </div>
   <div class="page-actions">
     <button class="btn btn-primary btn-sm" onclick="abrirModalNovoLeadFunil('pago')">+ Lead tráfego pago</button>
-    ${!isG ? `<button class="btn btn-ghost btn-sm" onclick="abrirModalNovoLeadFunil('ligacao')">+ Lead da ligação</button>` : ''}
+    <button class="btn btn-ghost btn-sm" onclick="abrirModalNovoLeadFunil('ligacao')">+ Lead da ligação</button>
   </div>
 </div>
 
@@ -6311,6 +6311,12 @@ function renderModaisFunil() {
     </div>
     <div class="form-group"><label>Celular</label><input id="mfn-celular" placeholder="(00) 00000-0000"></div>
     <div id="mfn-campos-ligacao" style="display:none">
+      <div id="mfn-vendedor-wrap" class="form-group" style="display:none">
+        <label>Vendedor</label>
+        <select id="mfn-vendedor-select">
+          ${DB.vendedores.map(v => `<option value="${v.id}">${v.nome}</option>`).join('')}
+        </select>
+      </div>
       <div class="form-group"><label>Interesse</label>
         <div id="mfn-interesse" style="display:flex;gap:6px;flex-wrap:wrap">
           ${FUNIL_INTERESSES.map(op => `<span class="chip" data-val="${op}" onclick="toggleInteresseFunil('${op}')" style="cursor:pointer">${op}</span>`).join('')}
@@ -6432,10 +6438,11 @@ let _funilLeadVendaTarget = null;
 function abrirModalNovoLeadFunil(tipo) {
   _funilLeadTipo = tipo;
   _funilInteresseSel = [];
+  const isG = (AppState.user.role === 'gestor' || AppState.user.role === 'adm');
   document.getElementById('mfn-title').textContent = tipo === 'pago' ? 'Novo lead — Tráfego pago' : 'Novo lead — Ligação';
   document.getElementById('mfn-sub').textContent = tipo === 'pago'
     ? 'Será atribuído automaticamente pelo rodízio. Só nome e telefone por enquanto.'
-    : `Atribuído a você. Preencha o que conseguiu na ligação.`;
+    : (isG ? 'Escolha o vendedor. Preencha o que ele conseguiu na ligação.' : 'Atribuído a você. Preencha o que conseguiu na ligação.');
   ['mfn-nome','mfn-email','mfn-celular','mfn-valorcredito','mfn-renda','mfn-parcela','mfn-recurso','mfn-aluguel-valor','mfn-fgts-valor','mfn-profissao','mfn-obs'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   document.querySelectorAll('#mfn-interesse .chip').forEach(c => c.classList.remove('badge-green'));
   document.getElementById('mfn-decide').value = '';
@@ -6446,6 +6453,7 @@ function abrirModalNovoLeadFunil(tipo) {
   document.getElementById('mfn-aluguel-valor').style.display = 'none';
   document.getElementById('mfn-fgts-valor').style.display = 'none';
   document.getElementById('mfn-campos-ligacao').style.display = tipo === 'ligacao' ? 'block' : 'none';
+  document.getElementById('mfn-vendedor-wrap').style.display = (tipo === 'ligacao' && isG) ? 'block' : 'none';
   document.getElementById('mfn-erro').style.display = 'none';
   openModal('m-funil-novo');
 }
@@ -6477,8 +6485,11 @@ async function salvarNovoLeadFunil() {
     await Servicos.atualizarRodizio(idx);
   } else {
     const agoraIso = new Date().toISOString();
+    const isG = (u.role === 'gestor' || u.role === 'adm');
+    const vendedorEscolhido = isG ? document.getElementById('mfn-vendedor-select').value : u.id;
+    if (isG && !vendedorEscolhido) { const e = document.getElementById('mfn-erro'); e.textContent = 'Cadastre pelo menos um vendedor antes.'; e.style.display='block'; btn.disabled=false; btn.textContent='Criar lead'; return; }
     payload = {
-      ...base, origem: 'ligacao', vendedor_id: u.id, etapa: 'contato', tentativas: 1,
+      ...base, origem: 'ligacao', vendedor_id: vendedorEscolhido, etapa: 'contato', tentativas: 1,
       primeiro_contato_ts: agoraIso,
       interesse: _funilInteresseSel, valor_credito: parseFloat(document.getElementById('mfn-valorcredito').value)||0,
       renda_familiar: parseFloat(document.getElementById('mfn-renda').value)||0,
