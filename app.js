@@ -5992,6 +5992,26 @@ function renderPainelExecutivoFunil() {
   const funilFechamento = ['reuniao2','analisando','aguardPagamento','venda'].map(k => ({
     key: k, label: FUNIL_ETAPAS.find(e => e.key === k).label, qtd: emEtapaOuDepoisFunil(leads, k),
   }));
+
+  // NOVO: Diagnóstico do funil — acha a etapa com PIOR conversão (gargalo) e a
+  // com MELHOR conversão (ponto forte), olhando as transições dos dois funis
+  function transicoesDoFunil(etapas, nomeFunil) {
+    const trans = [];
+    for (let i = 1; i < etapas.length; i++) {
+      if (etapas[i-1].qtd > 0) {
+        trans.push({
+          de: etapas[i-1].label, para: etapas[i].label, funil: nomeFunil,
+          pct: Math.round((etapas[i].qtd/etapas[i-1].qtd)*100),
+          qtdDe: etapas[i-1].qtd, qtdPara: etapas[i].qtd,
+        });
+      }
+    }
+    return trans;
+  }
+  const todasTransicoes = [...transicoesDoFunil(funilCaptacao, 'Captação'), ...transicoesDoFunil(funilFechamento, 'Fechamento')];
+  const gargalo = todasTransicoes.length > 0 ? todasTransicoes.reduce((pior, t) => t.pct < pior.pct ? t : pior) : null;
+  const pontoForte = todasTransicoes.length > 0 ? todasTransicoes.reduce((melhor, t) => t.pct > melhor.pct ? t : melhor) : null;
+
   function montarFunilHtml(etapas, corBase) {
     const topo = Math.max(etapas[0].qtd, 1);
     const cores = corBase === 'azul'
@@ -6011,7 +6031,13 @@ function renderPainelExecutivoFunil() {
           <div style="font-size:8px;color:${textoClaro};font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${et.label}</div>
           <div style="font-size:18px;font-weight:700;font-family:var(--mono);color:#fff">${et.qtd}</div>
         </div>
-        ${!ultimo ? `<div style="font-size:8px;color:var(--text3);margin:2px 0;text-align:center">${pctAnterior!==null?`↓ ${pctAnterior}% de conversão`:''} · Σ ${pctTopo}% do funil</div>` : ''}
+        ${!ultimo ? (() => {
+          const corPct = pctAnterior === null ? 'var(--text2)' : pctAnterior >= 70 ? 'var(--green)' : pctAnterior >= 40 ? 'var(--amber)' : 'var(--brand)';
+          return `<div style="display:flex;align-items:center;justify-content:center;gap:8px;margin:4px 0">
+            <span style="font-size:15px;font-weight:800;font-family:var(--mono);color:${corPct}">${pctAnterior!==null ? pctAnterior+'%' : '—'}</span>
+            <span style="font-size:9px;color:var(--text3)">acum. ${pctTopo}%</span>
+          </div>`;
+        })() : ''}
       `;
     }).join('');
   }
@@ -6151,6 +6177,27 @@ ${leadsParados3dias.length > 0 ? `
     </div>
   </div>
 </div>
+
+${gargalo && pontoForte ? `
+<div class="card">
+  <div class="card-body">
+    <div class="form-divider">Diagnóstico do funil</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px">
+      <div style="background:var(--red-dim);border:1px solid var(--brand-border);border-radius:8px;padding:14px">
+        <div style="font-size:9px;font-weight:700;color:var(--brand);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">⚠ Gargalo — pior conversão</div>
+        <div style="font-size:13px;color:var(--text);margin-bottom:4px"><strong>${gargalo.funil}:</strong> ${gargalo.de} → ${gargalo.para}</div>
+        <div style="font-size:20px;font-weight:800;font-family:var(--mono);color:var(--brand)">${gargalo.pct}%</div>
+        <div style="font-size:10px;color:var(--text3);margin-top:2px">${gargalo.qtdPara} de ${gargalo.qtdDe} avançaram — é aqui que mais se perde lead</div>
+      </div>
+      <div style="background:var(--green-dim);border:1px solid var(--green-glow);border-radius:8px;padding:14px">
+        <div style="font-size:9px;font-weight:700;color:var(--green);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">✓ Ponto forte — melhor conversão</div>
+        <div style="font-size:13px;color:var(--text);margin-bottom:4px"><strong>${pontoForte.funil}:</strong> ${pontoForte.de} → ${pontoForte.para}</div>
+        <div style="font-size:20px;font-weight:800;font-family:var(--mono);color:var(--green)">${pontoForte.pct}%</div>
+        <div style="font-size:10px;color:var(--text3);margin-top:2px">${pontoForte.qtdPara} de ${pontoForte.qtdDe} avançaram — etapa mais eficiente do funil</div>
+      </div>
+    </div>
+  </div>
+</div>` : ''}
 `;
 }
 
