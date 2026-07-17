@@ -20,6 +20,28 @@
 const PERCENTUAL_ESTORNO_RECEBIDA = 25; // % sobre a comissão já recebida — pode mudar no futuro
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   FUNIL DE ATENDIMENTO — constantes
+   ═══════════════════════════════════════════════════════════════════════════ */
+const FUNIL_META = { reunioes: 20, vendas: 5, ticketMin: 200000, ticketMax: 300000, conversaoPago: 5, creditoProspectado: 15000000 };
+const FUNIL_ETAPAS = [
+  { key: 'lead',            label: 'Lead' },
+  { key: 'contato',         label: 'Contato' },
+  { key: 'qualificacao',    label: 'Qualificação' },
+  { key: 'reuniao1',        label: '1ª Reunião' },
+  { key: 'reuniao2',        label: '2ª Reunião' },
+  { key: 'analisando',      label: 'Analisando' },
+  { key: 'aguardPagamento', label: 'Aguard. pagamento' },
+  { key: 'venda',           label: 'Venda' },
+  { key: 'followup',        label: 'Follow-up' },
+];
+const FUNIL_ETAPA_ORDEM = FUNIL_ETAPAS.map(e => e.key);
+const FUNIL_ETAPA_REUNIAO_META = 'reuniao1';
+const FUNIL_INTERESSES = ['Auto', 'Imóvel', 'Moto', 'Serviços', 'Outros'];
+const FUNIL_ORIGENS_PROSPECCAO = ['Tráfego pago', 'Ligação ativa', 'Indicação', 'Redes sociais', 'Porta a porta', 'Outro'];
+const FUNIL_CIDADES = ['Brusque', 'Blumenau', 'Itajaí', 'Outra'];
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
    1. DATA LAYER — Fonte única de verdade (substituível por API/Supabase)
    ═══════════════════════════════════════════════════════════════════════════ */
 const DB = {
@@ -99,6 +121,13 @@ const DB = {
   ],
 
   fechamentosGestor: [],
+
+  /* ── Funil de Atendimento ──────────────────────────────────────────────── */
+  leadsFunil: [],
+  funilRodizio: { ultimoIndice: -1 },
+  funilLigacoes: {}, // { vendedorId: { 'YYYY-MM-DD': qtd } }
+  funilIA: {},        // { 'YYYY-MM-DD': { contatos, respostas, reunioes } }
+
   nextFechGestorId: 1,
 
   /* ── Regras de estorno ─────────────────────────────────────────────────── */
@@ -237,6 +266,7 @@ const AppState = {
 
     tabelas:       { expandida: null, filterRef: 'all' },
     trabalho:      { vendId: null, filterSit: 'all' },
+    funil:         { filtroVend: 'todos', mesSel: null },
     clientes:      { search: '' },
     vendedores:    {},
     dashboard:     { rankPeriodo: 'total' },
@@ -557,6 +587,7 @@ const Router = {
     inadimplencia: { label: 'Inadimplência', icon: '▲', section: 'comercial', render: renderInadimplencia },
     estornos:      { label: 'Estornos',      icon: '✕', section: 'comercial', render: renderEstornos },
     trabalho:      { label: 'Relatório de Trabalho', icon: '', section: 'comercial', render: renderRelatorioTrabalho },
+    funil:         { label: 'Funil de Atendimento', icon: '', section: 'comercial', render: renderFunil },
     remuneracao:   { label: 'Comissão WCON', icon: '★', section: 'gestor', render: renderRemuneracao },
 
     tabelas:       { label: 'Tabelas',       icon: '≡', section: 'configuracao', render: renderTabelas },
@@ -1093,8 +1124,8 @@ function buildSidebar() {
   };
 
   const visibles = isG
-    ? ['dashboard','vendedores','clientes','relatorio','comissao','inadimplencia','estornos','trabalho','remuneracao','tabelas','configuracoes']
-    : ['dashboard','relatorio','comissao','inadimplencia','estornos','trabalho','tabelas'];
+    ? ['dashboard','vendedores','clientes','relatorio','comissao','inadimplencia','estornos','trabalho','funil','remuneracao','tabelas','configuracoes']
+    : ['dashboard','relatorio','comissao','inadimplencia','estornos','trabalho','funil','tabelas'];
 
   const badges = {
     inadimplencia: DB.vendas.filter(v => v.status === 'inadimplente' && (isG ? true : vendasNoEscopo(u).some(x=>x.id===v.id))).length,
@@ -5682,7 +5713,553 @@ ${seletor}
 </div>`;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   FUNIL DE ATENDIMENTO
+   ═══════════════════════════════════════════════════════════════════════════ */
+function leadsVisiveisFunil() {
+  const u = AppState.user;
+  const isG = (u.role === 'gestor' || u.role === 'adm');
+  const st = AppState.modulo.funil;
+  if (isG) return st.filtroVend ? DB.leadsFunil.filter(l => l.vendedor === st.filtroVend) : DB.leadsFunil;
+  return DB.leadsFunil.filter(l => l.vendedor === u.id);
+}
+
+function dataUltimaEtapaFunil(lead, etapaAlvo) {
+  const evento = [...(lead.historico || [])].reverse().find(h => h.etapa === etapaAlvo);
+  return evento ? evento.data : null;
+}
+
+function emEtapaOuDepoisFunil(lista, etapa) {
+  const idx = FUNIL_ETAPA_ORDEM.indexOf(etapa);
+  return lista.filter(l => l.etapa !== 'desqualificado' && FUNIL_ETAPA_ORDEM.indexOf(l.etapa) >= idx).length;
+}
+
+function proximoDoRodizioFunil() {
+  const idx = (DB.funilRodizio.ultimoIndice + 1) % DB.vendedores.length;
+  return { vendedorId: DB.vendedores[idx]?.id, idx };
+}
+
+function melhorPerformanceFunil(excluirVendId, mes) {
+  const candidatos = DB.vendedores.filter(v => v.id !== excluirVendId);
+  const ranking = candidatos.map(v => {
+    const doVend = DB.leadsFunil.filter(l => l.vendedor === v.id && l.criadoEm && l.criadoEm.substring(0,7) === mes);
+    const vendas = doVend.filter(l => l.etapa === 'venda').length;
+    const conversao = doVend.length > 0 ? vendas / doVend.length : 0;
+    return { id: v.id, vendas, conversao };
+  });
+  ranking.sort((a,b) => b.vendas - a.vendas || b.conversao - a.conversao);
+  return ranking[0]?.id || DB.vendedores[0]?.id;
+}
+
+function renderFunil() {
+  const u = AppState.user;
+  const isG = (u.role === 'gestor' || u.role === 'adm');
+  const st = AppState.modulo.funil;
+  if (!st.mesSel) st.mesSel = todayMes();
+
+  const leadsVisiveis = leadsVisiveisFunil();
+  const mesesDisp = Array.from(new Set([...DB.leadsFunil.map(l => (l.criadoEm||'').substring(0,7)).filter(Boolean), st.mesSel])).sort();
+  const leadsVisiveisMes = leadsVisiveis.filter(l => (l.criadoEm||'').substring(0,7) === st.mesSel);
+
+  const totalReunioes = leadsVisiveis.filter(l => {
+    const d = dataUltimaEtapaFunil(l, FUNIL_ETAPA_REUNIAO_META);
+    return d && d.substring(0,7) === st.mesSel;
+  }).length;
+
+  const vendasDoMes = leadsVisiveis.filter(l => l.etapa === 'venda' && (dataUltimaEtapaFunil(l,'venda')||'').substring(0,7) === st.mesSel);
+  const totalVendas = vendasDoMes.length;
+  const valorVendasTotal = vendasDoMes.reduce((a,l) => a + (l.valorVenda||0), 0);
+  const ticketMedio = totalVendas > 0 ? valorVendasTotal/totalVendas : 0;
+
+  const leadsLigacao = leadsVisiveisMes.filter(l => l.origem === 'ligacao');
+  const leadsPago    = leadsVisiveisMes.filter(l => l.origem === 'pago');
+  const vendasPago   = leadsPago.filter(l => l.etapa === 'venda').length;
+  const conversaoPagoReal = leadsPago.length > 0 ? (vendasPago/leadsPago.length)*100 : 0;
+
+  function totalLigacoesVend(vendId) {
+    const porDia = DB.funilLigacoes[vendId] || {};
+    return Object.entries(porDia).filter(([d]) => d.substring(0,7) === st.mesSel).reduce((a,[,v]) => a+v, 0);
+  }
+  const totalLigacoes = isG
+    ? (st.filtroVend ? totalLigacoesVend(st.filtroVend) : DB.vendedores.reduce((a,v) => a+totalLigacoesVend(v.id), 0))
+    : totalLigacoesVend(u.id);
+
+  const funilLigacaoStats = {
+    ligacoes: totalLigacoes,
+    contatos: leadsLigacao.length,
+    qualificados: emEtapaOuDepoisFunil(leadsLigacao, 'qualificacao'),
+    reunioes: emEtapaOuDepoisFunil(leadsLigacao, FUNIL_ETAPA_REUNIAO_META),
+  };
+
+  const creditoProspectado = leadsVisiveisMes.filter(l => l.etapa !== 'desqualificado').reduce((a,l) => a+(l.valorCredito||0), 0);
+  const ticketRef = ticketMedio > 0 ? ticketMedio : (FUNIL_META.ticketMin+FUNIL_META.ticketMax)/2;
+  const projecaoPorVolume = creditoProspectado * 0.10;
+  const vendasProjPorReuniao = totalReunioes / 5;
+  const projecaoPorReuniao = vendasProjPorReuniao * ticketRef;
+  const projecaoMedia = (projecaoPorVolume + projecaoPorReuniao) / 2;
+  const pctProjRealizada = projecaoMedia > 0 ? Math.min((valorVendasTotal/projecaoMedia)*100, 999) : 0;
+
+  const vendorTabsFunil = isG ? renderVendorFilter(st.filtroVend, "AppState.modulo.funil.filtroVend", 'funil') : '';
+  const mesNavFunil = renderMesNav(mesesDisp, st.mesSel, "AppState.modulo.funil.mesSel", 'funil');
+
+  function colunaLeads(etapaKey) {
+    return leadsVisiveisMes.filter(l => l.etapa === etapaKey).sort((a,b) => (b.criadoEm||'').localeCompare(a.criadoEm||''));
+  }
+  const leadsPerdidos = leadsVisiveisMes.filter(l => l.etapa === 'desqualificado');
+
+  const pipelineHtml = FUNIL_ETAPAS.map(et => {
+    const leads = colunaLeads(et.key);
+    return `<div style="background:var(--ink3);border-radius:8px;padding:8px;min-width:150px;flex-shrink:0">
+      <div style="font-size:10px;font-weight:700;color:var(--text2);margin-bottom:8px;display:flex;justify-content:space-between">
+        <span>${et.label}</span><span style="font-family:var(--mono);color:var(--text3)">${leads.length}</span>
+      </div>
+      ${leads.map(lead => {
+        const idxAtual = FUNIL_ETAPA_ORDEM.indexOf(lead.etapa);
+        const proxima = FUNIL_ETAPA_ORDEM[idxAtual+1];
+        const origBg = lead.origem === 'pago' ? '#E6F1FB' : 'var(--ink4)';
+        const origCor = lead.origem === 'pago' ? '#0C447C' : 'var(--text2)';
+        const origLabel = lead.origem === 'pago' ? 'Tráfego pago' : 'Ligação';
+        return `<div class="card" style="padding:8px;margin-bottom:6px;cursor:pointer" onclick="verDetalheLeadFunil('${lead.id}')">
+          <div style="font-size:12px;font-weight:600;margin-bottom:2px">${lead.nome}</div>
+          ${isG && !st.filtroVend ? `<div style="font-size:9px;color:var(--text3);margin-bottom:4px">${DB.vendedores.find(v=>v.id===lead.vendedor)?.nome || '—'}</div>` : ''}
+          <span class="chip" style="background:${origBg};color:${origCor};font-size:9px">${origLabel}</span>
+          ${lead.valorCredito ? `<div style="font-size:10px;font-family:var(--mono);color:var(--text2);margin-top:4px">${fmt(lead.valorCredito)}</div>` : ''}
+          ${lead.etapa === 'venda' ? `<div style="font-size:11px;font-family:var(--mono);color:var(--green);margin-top:5px">${fmt(lead.valorVenda)}</div>` : ''}
+          ${lead.etapa === 'contato' ? `<div onclick="event.stopPropagation()" style="display:flex;align-items:center;justify-content:space-between;margin-top:5px;gap:4px">
+            <span style="font-size:9px;font-family:var(--mono);color:${(lead.tentativas||0)>=6?'var(--brand)':'var(--text3)'}">${lead.tentativas||0}/6 tentativas</span>
+            <button class="btn btn-ghost btn-sm" style="padding:1px 6px;font-size:10px" onclick="incrementarTentativaFunil('${lead.id}')">+1</button>
+          </div>` : ''}
+          ${proxima ? `<div onclick="event.stopPropagation()" style="display:flex;gap:4px;margin-top:6px">
+            <button class="btn btn-ghost btn-sm" style="flex:1;font-size:10px;padding:3px" onclick="moverEtapaFunil('${lead.id}','${proxima}')">→ ${FUNIL_ETAPAS.find(e=>e.key===proxima)?.label}</button>
+            <button class="btn btn-ghost btn-sm" style="color:var(--brand);font-size:10px;padding:3px 6px" onclick="marcarPerdidoFunil('${lead.id}')">✕</button>
+          </div>` : ''}
+        </div>`;
+      }).join('') || '<div style="font-size:11px;color:var(--text3);text-align:center;padding:10px 0">—</div>'}
+    </div>`;
+  }).join('');
+
+  return `
+<div class="page-header">
+  <div>
+    <div class="page-title">Funil de Atendimento</div>
+    <div class="page-sub">// pipeline de leads · ${mesLabel(st.mesSel)}</div>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-primary btn-sm" onclick="abrirModalNovoLeadFunil('pago')">+ Lead tráfego pago</button>
+    ${!isG ? `<button class="btn btn-ghost btn-sm" onclick="abrirModalNovoLeadFunil('ligacao')">+ Lead da ligação</button>` : ''}
+  </div>
+</div>
+
+${vendorTabsFunil}
+${mesNavFunil}
+
+${!isG ? `
+<div class="card">
+  <div style="display:flex;gap:10px;align-items:flex-end;padding:14px 16px;flex-wrap:wrap">
+    <div class="form-group" style="flex:1;min-width:180px;margin-bottom:0">
+      <label>Ligações realizadas hoje (${fmtDate(today())})</label>
+      <input type="number" min="0" id="funil-ligacoes-input" placeholder="Ex: 8">
+    </div>
+    <button class="btn btn-ghost btn-sm" onclick="salvarLigacoesFunil()">+ Adicionar</button>
+    <div style="font-size:11px;color:var(--text3)">Total hoje: <strong style="color:var(--text);font-family:var(--mono)">${(DB.funilLigacoes[u.id]||{})[today()]||0}</strong></div>
+  </div>
+</div>` : ''}
+
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="stat-label">Meta reuniões</div>
+    <div class="stat-value">${totalReunioes} / ${FUNIL_META.reunioes}</div>
+    <div class="progress-wrap" style="margin-top:6px"><div class="progress-bar" style="width:${Math.min(totalReunioes/FUNIL_META.reunioes*100,100)}%;background:var(--brand)"></div></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Meta vendas</div>
+    <div class="stat-value">${totalVendas} / ${FUNIL_META.vendas}</div>
+    <div class="progress-wrap" style="margin-top:6px"><div class="progress-bar" style="width:${Math.min(totalVendas/FUNIL_META.vendas*100,100)}%;background:var(--brand)"></div></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Crédito prospectado</div>
+    <div class="stat-value" style="font-size:15px">${fmt(creditoProspectado)}</div>
+    <div class="stat-meta">meta: ${fmt(FUNIL_META.creditoProspectado)}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Ticket médio</div>
+    <div class="stat-value" style="font-size:15px">${fmt(ticketMedio)}</div>
+    <div class="stat-meta">meta: 200k–300k</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Conversão tráfego pago</div>
+    <div class="stat-value">${conversaoPagoReal.toFixed(1)}%</div>
+    <div class="stat-meta">${vendasPago}/${leadsPago.length} leads</div>
+  </div>
+</div>
+
+<div class="card" style="background:var(--amber-dim);border:1px solid var(--amber-glow)">
+  <div class="card-body">
+    <div class="form-divider">Projeção de fechamento — 10% do prospectado + 1 venda a cada 5 reuniões</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:10px">
+      <div><div class="stat-label">Por volume (10%)</div><div style="font-family:var(--mono);font-weight:600">${fmt(projecaoPorVolume)}</div></div>
+      <div><div class="stat-label">Por reuniões</div><div style="font-family:var(--mono);font-weight:600">${fmt(projecaoPorReuniao)}</div></div>
+      <div><div class="stat-label">Projeção combinada</div><div style="font-family:var(--mono);font-weight:700;font-size:16px">${fmt(projecaoMedia)}</div></div>
+    </div>
+    <div style="font-size:11px;color:var(--text2)">Já fechado: ${fmt(valorVendasTotal)} (${pctProjRealizada.toFixed(0)}% da projeção)</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <div class="form-divider">Funil de lista fria (ligação)</div>
+    ${['ligacoes','contatos','qualificados','reunioes'].map((key,i,arr) => {
+      const labels = {ligacoes:'Ligações',contatos:'Contatos',qualificados:'Qualificados',reunioes:'Reuniões'};
+      const valor = funilLigacaoStats[key];
+      const anterior = i>0 ? funilLigacaoStats[arr[i-1]] : null;
+      const pct = anterior && anterior>0 ? ((valor/anterior)*100).toFixed(0) : null;
+      const largura = Math.max((valor/Math.max(funilLigacaoStats.ligacoes,1))*100, valor>0?4:0);
+      return `<div style="margin-bottom:9px">
+        <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px">
+          <span style="color:var(--text2);font-weight:600">${labels[key]}</span>
+          <span style="font-family:var(--mono)">${valor}${pct!==null?` <span style="color:var(--text3)">(${pct}%)</span>`:''}</span>
+        </div>
+        <div style="background:var(--ink4);border-radius:4px;height:14px;overflow:hidden">
+          <div style="background:${i===3?'var(--brand)':'var(--text2)'};height:100%;width:${largura}%"></div>
+        </div>
+      </div>`;
+    }).join('')}
+  </div>
+</div>
+
+<div class="form-divider" style="margin:20px 0 10px">Pipeline</div>
+<div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:8px">${pipelineHtml}</div>
+
+${leadsPerdidos.length>0 ? `<div style="margin-top:10px;font-size:11px;color:var(--text3)">${leadsPerdidos.length} lead(s) desqualificado(s) este mês</div>` : ''}
+
+${renderModaisFunil()}
+`;
+}
+
+function renderModaisFunil() {
+  return `
+<div class="overlay" id="m-funil-novo">
+  <div class="modal" style="max-width:560px">
+    <button class="modal-close" onclick="closeModal('m-funil-novo')">✕</button>
+    <div class="modal-title" id="mfn-title">Novo lead</div>
+    <div class="modal-sub" id="mfn-sub"></div>
+    <div class="form-row cols-2">
+      <div class="form-group"><label>Nome *</label><input id="mfn-nome" placeholder="Nome do lead"></div>
+      <div class="form-group"><label>E-mail</label><input id="mfn-email" placeholder="email@exemplo.com"></div>
+    </div>
+    <div class="form-group"><label>Celular</label><input id="mfn-celular" placeholder="(00) 00000-0000"></div>
+    <div id="mfn-campos-ligacao" style="display:none">
+      <div class="form-group"><label>Interesse</label>
+        <div id="mfn-interesse" style="display:flex;gap:6px;flex-wrap:wrap">
+          ${FUNIL_INTERESSES.map(op => `<span class="chip" data-val="${op}" onclick="toggleInteresseFunil('${op}')" style="cursor:pointer">${op}</span>`).join('')}
+        </div>
+      </div>
+      <div class="form-row cols-2">
+        <div class="form-group"><label>Valor do crédito</label><input type="number" id="mfn-valorcredito" placeholder="250000"></div>
+        <div class="form-group"><label>Renda familiar</label><input type="number" id="mfn-renda" placeholder="8000"></div>
+      </div>
+      <div class="form-row cols-3">
+        <div class="form-group"><label>Decide a compra</label>
+          <select id="mfn-decide">
+            <option value="">Selecione...</option>
+            <option value="sozinho">Decide sozinho(a)</option>
+            <option value="com_conjuge">Decide com cônjuge/família</option>
+            <option value="nao_decide">Não decide (influenciador)</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Parcela ideal</label><input type="number" id="mfn-parcela" placeholder="1500"></div>
+        <div class="form-group"><label>Recurso próprio</label><input type="number" id="mfn-recurso" placeholder="0"></div>
+      </div>
+      <div class="form-row cols-2">
+        <div class="form-group"><label>Paga aluguel/financiamento</label>
+          <div style="display:flex;gap:8px">
+            <select id="mfn-aluguel" style="flex:0 0 90px" onchange="document.getElementById('mfn-aluguel-valor').style.display=this.value==='sim'?'block':'none'">
+              <option value="nao">Não</option><option value="sim">Sim</option>
+            </select>
+            <input type="number" id="mfn-aluguel-valor" placeholder="Valor" style="display:none">
+          </div>
+        </div>
+        <div class="form-group"><label>FGTS</label>
+          <div style="display:flex;gap:8px">
+            <select id="mfn-fgts" style="flex:0 0 90px" onchange="document.getElementById('mfn-fgts-valor').style.display=this.value==='sim'?'block':'none'">
+              <option value="nao">Não</option><option value="sim">Sim</option>
+            </select>
+            <input type="number" id="mfn-fgts-valor" placeholder="Valor" style="display:none">
+          </div>
+        </div>
+      </div>
+      <div class="form-row cols-3">
+        <div class="form-group"><label>Cidade</label>
+          <select id="mfn-cidade"><option value="">Selecione...</option>${FUNIL_CIDADES.map(c=>`<option value="${c}">${c}</option>`).join('')}</select>
+        </div>
+        <div class="form-group"><label>Origem da prospecção</label>
+          <select id="mfn-origemprosp"><option value="">Selecione...</option>${FUNIL_ORIGENS_PROSPECCAO.map(o=>`<option value="${o}">${o}</option>`).join('')}</select>
+        </div>
+        <div class="form-group"><label>Profissão</label><input id="mfn-profissao" placeholder="Profissão"></div>
+      </div>
+      <div class="form-group"><label>Histórico / Observação</label><textarea id="mfn-obs" placeholder="Anotações sobre a ligação..."></textarea></div>
+    </div>
+    <div id="mfn-erro" class="alert alert-red" style="display:none"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('m-funil-novo')">Cancelar</button>
+      <button class="btn btn-primary" id="mfn-btn-salvar" onclick="salvarNovoLeadFunil()">Criar lead</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="m-funil-perfil">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-title">Avaliar perfil</div>
+    <div class="modal-sub" id="mfp-sub"></div>
+    <div id="mfp-dados" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;margin-bottom:14px"></div>
+    <div id="mfp-sugestao" style="font-size:11px;font-weight:600;padding:10px;border-radius:8px;margin-bottom:16px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('m-funil-perfil')">Cancelar</button>
+      <button class="btn btn-danger" onclick="confirmarPerfilFunil(false)">✕ Sem perfil</button>
+      <button class="btn btn-primary" onclick="confirmarPerfilFunil(true)">✓ Tem perfil</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="m-funil-venda">
+  <div class="modal" style="max-width:320px">
+    <div class="modal-title">Valor da venda</div>
+    <div class="form-group"><label>Valor (R$)</label><input type="number" id="mfv-valor" placeholder="250000"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('m-funil-venda')">Cancelar</button>
+      <button class="btn btn-primary" onclick="confirmarVendaFunil()">Confirmar venda</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="m-funil-detalhe">
+  <div class="modal" style="max-width:460px">
+    <button class="modal-close" onclick="closeModal('m-funil-detalhe')">✕</button>
+    <div id="mfd-conteudo"></div>
+  </div>
+</div>`;
+}
+
+let _funilLeadTipo = null;
+let _funilInteresseSel = [];
+let _funilLeadPerfilTarget = null;
+let _funilLeadVendaTarget = null;
+
+function abrirModalNovoLeadFunil(tipo) {
+  _funilLeadTipo = tipo;
+  _funilInteresseSel = [];
+  document.getElementById('mfn-title').textContent = tipo === 'pago' ? 'Novo lead — Tráfego pago' : 'Novo lead — Ligação';
+  document.getElementById('mfn-sub').textContent = tipo === 'pago'
+    ? 'Será atribuído automaticamente pelo rodízio. Só nome e telefone por enquanto.'
+    : `Atribuído a você. Preencha o que conseguiu na ligação.`;
+  ['mfn-nome','mfn-email','mfn-celular','mfn-valorcredito','mfn-renda','mfn-parcela','mfn-recurso','mfn-aluguel-valor','mfn-fgts-valor','mfn-profissao','mfn-obs'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  document.querySelectorAll('#mfn-interesse .chip').forEach(c => c.classList.remove('badge-green'));
+  document.getElementById('mfn-decide').value = '';
+  document.getElementById('mfn-aluguel').value = 'nao';
+  document.getElementById('mfn-fgts').value = 'nao';
+  document.getElementById('mfn-cidade').value = '';
+  document.getElementById('mfn-origemprosp').value = '';
+  document.getElementById('mfn-aluguel-valor').style.display = 'none';
+  document.getElementById('mfn-fgts-valor').style.display = 'none';
+  document.getElementById('mfn-campos-ligacao').style.display = tipo === 'ligacao' ? 'block' : 'none';
+  document.getElementById('mfn-erro').style.display = 'none';
+  openModal('m-funil-novo');
+}
+
+function toggleInteresseFunil(valor) {
+  const idx = _funilInteresseSel.indexOf(valor);
+  if (idx >= 0) _funilInteresseSel.splice(idx, 1); else _funilInteresseSel.push(valor);
+  document.querySelectorAll('#mfn-interesse .chip').forEach(c => {
+    c.classList.toggle('badge-green', _funilInteresseSel.includes(c.dataset.val));
+  });
+}
+
+async function salvarNovoLeadFunil() {
+  const nome = document.getElementById('mfn-nome').value.trim();
+  if (!nome) { const e = document.getElementById('mfn-erro'); e.textContent = 'Digite o nome do lead.'; e.style.display = 'block'; return; }
+  const u = AppState.user;
+  const btn = document.getElementById('mfn-btn-salvar');
+  btn.disabled = true; btn.textContent = 'Salvando...';
+
+  const base = {
+    nome, email: document.getElementById('mfn-email').value.trim(), celular: document.getElementById('mfn-celular').value.trim(),
+  };
+
+  let payload;
+  if (_funilLeadTipo === 'pago') {
+    const { vendedorId, idx } = proximoDoRodizioFunil();
+    if (!vendedorId) { Dialog.alert('Sem vendedores', ['Cadastre pelo menos um vendedor antes de distribuir leads.']); btn.disabled=false; btn.textContent='Criar lead'; return; }
+    payload = { ...base, origem: 'pago', vendedor_id: vendedorId, etapa: 'lead', tentativas: 0, historico_etapas: [{ etapa:'lead', data: today() }] };
+    await Servicos.atualizarRodizio(idx);
+  } else {
+    payload = {
+      ...base, origem: 'ligacao', vendedor_id: u.id, etapa: 'contato', tentativas: 1,
+      interesse: _funilInteresseSel, valor_credito: parseFloat(document.getElementById('mfn-valorcredito').value)||0,
+      renda_familiar: parseFloat(document.getElementById('mfn-renda').value)||0,
+      decide_compra: document.getElementById('mfn-decide').value,
+      parcela_ideal: parseFloat(document.getElementById('mfn-parcela').value)||0,
+      recurso_proprio: parseFloat(document.getElementById('mfn-recurso').value)||0,
+      paga_aluguel: document.getElementById('mfn-aluguel').value,
+      paga_aluguel_valor: parseFloat(document.getElementById('mfn-aluguel-valor').value)||0,
+      fgts: document.getElementById('mfn-fgts').value,
+      fgts_valor: parseFloat(document.getElementById('mfn-fgts-valor').value)||0,
+      cidade: document.getElementById('mfn-cidade').value,
+      origem_prospeccao: document.getElementById('mfn-origemprosp').value,
+      profissao: document.getElementById('mfn-profissao').value.trim(),
+      observacoes: document.getElementById('mfn-obs').value.trim(),
+      historico_etapas: [{ etapa:'contato', data: today() }],
+    };
+  }
+
+  const criado = await Servicos.criarLeadFunil(payload);
+  btn.disabled = false; btn.textContent = 'Criar lead';
+  if (!criado) { Dialog.alert('Erro ao salvar', ['Não foi possível criar o lead. Verifique sua conexão.']); return; }
+
+  closeModal('m-funil-novo');
+  await carregarDadosIniciais();
+  rerenderModule('funil');
+}
+
+async function moverEtapaFunil(leadId, novaEtapa) {
+  if (novaEtapa === 'venda') {
+    _funilLeadVendaTarget = leadId;
+    document.getElementById('mfv-valor').value = '';
+    openModal('m-funil-venda');
+    return;
+  }
+  if (novaEtapa === 'qualificacao') {
+    const lead = DB.leadsFunil.find(l => l.id === leadId);
+    abrirModalPerfilFunil(lead);
+    return;
+  }
+  const lead = DB.leadsFunil.find(l => l.id === leadId);
+  if (!lead) return;
+  const historico = [...(lead.historico||[]), { etapa: novaEtapa, data: today() }];
+  const patch = { etapa: novaEtapa, historico_etapas: historico };
+  if (novaEtapa === 'contato') patch.tentativas = (lead.tentativas||0) + 1;
+  const ok = await Servicos.atualizarLeadFunil(leadId, patch);
+  if (!ok) { Dialog.alert('Erro', ['Não foi possível atualizar o lead.']); return; }
+  await carregarDadosIniciais();
+  rerenderModule('funil');
+}
+
+function abrirModalPerfilFunil(lead) {
+  _funilLeadPerfilTarget = lead.id;
+  document.getElementById('mfp-sub').textContent = lead.nome;
+  document.getElementById('mfp-dados').innerHTML = `
+    <div><span style="color:var(--text3)">Crédito:</span> ${fmt(lead.valorCredito)}</div>
+    <div><span style="color:var(--text3)">Renda:</span> ${fmt(lead.rendaFamiliar)}</div>
+    <div><span style="color:var(--text3)">Parcela ideal:</span> ${fmt(lead.parcelaIdeal)}</div>
+    <div><span style="color:var(--text3)">Recurso próprio:</span> ${fmt(lead.recursoProprio)}</div>
+    <div><span style="color:var(--text3)">Decide compra:</span> ${lead.decideCompra||'—'}</div>
+    <div><span style="color:var(--text3)">Profissão:</span> ${lead.profissao||'—'}</div>`;
+  const renda = lead.rendaFamiliar||0, parcela = lead.parcelaIdeal||0;
+  let sug;
+  if (renda <= 0) sug = { bg:'var(--amber-dim)', cor:'var(--amber)', texto:'Sem dados de renda suficientes — avaliar com cuidado' };
+  else {
+    const ratio = parcela/renda;
+    if (ratio > 0 && ratio <= 0.3) sug = { bg:'var(--green-dim)', cor:'var(--green)', texto:`Parcela é ${(ratio*100).toFixed(0)}% da renda — perfil provável` };
+    else if (ratio <= 0.5) sug = { bg:'var(--amber-dim)', cor:'var(--amber)', texto:`Parcela é ${(ratio*100).toFixed(0)}% da renda — atenção, avaliar` };
+    else sug = { bg:'var(--red-dim)', cor:'var(--red)', texto:`Parcela é ${(ratio*100).toFixed(0)}% da renda — provável sem perfil` };
+  }
+  const sugEl = document.getElementById('mfp-sugestao');
+  sugEl.style.background = sug.bg; sugEl.style.color = sug.cor;
+  sugEl.textContent = `Sugestão automática: ${sug.texto}. A decisão final é sua.`;
+  openModal('m-funil-perfil');
+}
+
+async function confirmarPerfilFunil(temPerfil) {
+  const leadId = _funilLeadPerfilTarget;
+  const lead = DB.leadsFunil.find(l => l.id === leadId);
+  if (!lead) return;
+  const novaEtapa = temPerfil ? 'qualificacao' : 'desqualificado';
+  const historico = [...(lead.historico||[]), { etapa: novaEtapa, data: today() }];
+  const patch = { etapa: novaEtapa, perfil: temPerfil, historico_etapas: historico };
+  if (!temPerfil) patch.motivo_perdido = 'Sem perfil';
+  await Servicos.atualizarLeadFunil(leadId, patch);
+  closeModal('m-funil-perfil');
+  await carregarDadosIniciais();
+  rerenderModule('funil');
+}
+
+async function confirmarVendaFunil() {
+  const leadId = _funilLeadVendaTarget;
+  const valor = parseFloat(document.getElementById('mfv-valor').value) || 0;
+  const lead = DB.leadsFunil.find(l => l.id === leadId);
+  if (!lead) return;
+  const historico = [...(lead.historico||[]), { etapa:'venda', data: today() }];
+  await Servicos.atualizarLeadFunil(leadId, { etapa:'venda', valor_venda: valor, historico_etapas: historico });
+  closeModal('m-funil-venda');
+  await carregarDadosIniciais();
+  rerenderModule('funil');
+}
+
+async function marcarPerdidoFunil(leadId) {
+  const lead = DB.leadsFunil.find(l => l.id === leadId);
+  if (!lead) return;
+  const historico = [...(lead.historico||[]), { etapa:'desqualificado', data: today() }];
+  await Servicos.atualizarLeadFunil(leadId, { etapa:'desqualificado', motivo_perdido: lead.motivoPerdido || 'Descartado', historico_etapas: historico });
+  await carregarDadosIniciais();
+  rerenderModule('funil');
+}
+
+async function incrementarTentativaFunil(leadId) {
+  const lead = DB.leadsFunil.find(l => l.id === leadId);
+  if (!lead) return;
+  await Servicos.atualizarLeadFunil(leadId, { tentativas: (lead.tentativas||0) + 1 });
+  await carregarDadosIniciais();
+  rerenderModule('funil');
+}
+
+async function salvarLigacoesFunil() {
+  const n = parseInt(document.getElementById('funil-ligacoes-input').value) || 0;
+  if (n <= 0) return;
+  await Servicos.registrarLigacao(AppState.user.id, today(), n);
+  await carregarDadosIniciais();
+  rerenderModule('funil');
+}
+
+async function redistribuirLeadFunil(leadId) {
+  const lead = DB.leadsFunil.find(l => l.id === leadId);
+  if (!lead) return;
+  const mes = (lead.criadoEm||today()).substring(0,7);
+  const novoVendedor = melhorPerformanceFunil(lead.vendedor, mes);
+  const historico = [...(lead.historico||[]), { etapa: lead.etapa, data: today(), nota: 'Redistribuído manualmente' }];
+  await Servicos.atualizarLeadFunil(leadId, {
+    vendedor_anterior_id: lead.vendedor, vendedor_id: novoVendedor, tentativas: 0,
+    vezes_redistribuido: (lead.vezesRedistribuido||0) + 1, historico_etapas: historico,
+  });
+  await carregarDadosIniciais();
+  rerenderModule('funil');
+}
+
+function verDetalheLeadFunil(leadId) {
+  const lead = DB.leadsFunil.find(l => l.id === leadId);
+  if (!lead) return;
+  const vend = DB.vendedores.find(v => v.id === lead.vendedor);
+  document.getElementById('mfd-conteudo').innerHTML = `
+    <div style="font-size:15px;font-weight:700;margin-bottom:2px">${lead.nome}</div>
+    <div style="font-size:11px;color:var(--text3);margin-bottom:14px">${lead.email||'sem e-mail'} · ${lead.celular||'sem telefone'}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;margin-bottom:14px">
+      <div><span style="color:var(--text3)">Interesse:</span> ${(lead.interesse||[]).join(', ')||'—'}</div>
+      <div><span style="color:var(--text3)">Origem:</span> ${lead.origemProspeccao || (lead.origem==='pago'?'Tráfego pago':'Ligação')}</div>
+      <div><span style="color:var(--text3)">Crédito:</span> ${fmt(lead.valorCredito)}</div>
+      <div><span style="color:var(--text3)">Renda:</span> ${fmt(lead.rendaFamiliar)}</div>
+      <div><span style="color:var(--text3)">Parcela ideal:</span> ${fmt(lead.parcelaIdeal)}</div>
+      <div><span style="color:var(--text3)">Recurso próprio:</span> ${fmt(lead.recursoProprio)}</div>
+      <div><span style="color:var(--text3)">Cidade:</span> ${lead.cidade||'—'}</div>
+      <div><span style="color:var(--text3)">Profissão:</span> ${lead.profissao||'—'}</div>
+      <div><span style="color:var(--text3)">Tentativas:</span> ${lead.tentativas||0}/6</div>
+    </div>
+    ${lead.observacoes ? `<div style="font-size:11px;color:var(--text2);background:var(--ink3);padding:8px;border-radius:6px;margin-bottom:10px">${lead.observacoes}</div>` : ''}
+    <div style="font-size:10px;color:var(--text3);margin-bottom:14px">Vendedor: ${vend?.nome||'—'} · Etapa: ${FUNIL_ETAPAS.find(e=>e.key===lead.etapa)?.label||lead.etapa}${lead.motivoPerdido?` (${lead.motivoPerdido})`:''}</div>
+    ${lead.etapa !== 'venda' && lead.etapa !== 'desqualificado' ? `<button class="btn btn-ghost btn-sm" onclick="redistribuirLeadFunil('${lead.id}');closeModal('m-funil-detalhe')">Redistribuir pra outro vendedor</button>` : ''}
+  `;
+  openModal('m-funil-detalhe');
+}
+
 function rerenderModule(id) {
+
   const modId = id || AppState.currentModule;
   const el    = document.getElementById('mod-' + modId);
   if (!el || !Router.modules[modId]) return;
