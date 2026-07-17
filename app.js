@@ -12,26 +12,12 @@
    Brusque/Blumenau. Esse app.js é o MESMO arquivo pra todas as unidades —
    o que muda de negócio entre elas fica só aqui.
    ═══════════════════════════════════════════════════════════════════════════ */
-const CONFIG = {
-  // Cuiabá tem o role "Supervisor" (Angélica: comissão pessoal fixa +
-  // override Prime/Básica). Brusque/Blumenau têm um modelo de gerência
-  // diferente (por produto, com/sem supervisor) — desliga a aba/telas
-  // inteiras de Supervisor quando não se aplica.
-  habilitarSupervisorFeature: false, // true em Cuiabá
-
-  // Tabelas sem direito a estorno em caso de cancelamento
-  semEstorno: ['APE', 'TP', 'TEP'], // Cuiabá: ['APE']
-
-  // Tabelas com acompanhamento de inadimplência só até a 6ª parcela
-  // (padrão é até a 10ª). Brusque não informou nenhuma até agora.
-  acomp6: [], // Cuiabá: ['ETA','MB']
-
-  // Modelo de cálculo do estorno:
-  // 'faixaVenda'                 → % do valor da venda, por faixa de parcela cancelada (Cuiabá/BSF)
-  // 'percentualComissaoRecebida' → % fixo sobre a comissão JÁ RECEBIDA até o cancelamento (Brusque)
-  modeloEstorno: 'percentualComissaoRecebida', // Cuiabá: 'faixaVenda'
-  percentualEstornoRecebida: 25, // só usado se modeloEstorno for o de cima — pode mudar no futuro
-};
+// ─────────────────────────────────────────────────────────────────────────
+// Regras de comissionamento e estorno DESTA unidade (Brusque). Não é uma
+// config com toggle — é a regra real e única daqui. Se um dia precisar
+// comparar com outra unidade, olha o app.js de lá, não uma flag aqui.
+// ─────────────────────────────────────────────────────────────────────────
+const PERCENTUAL_ESTORNO_RECEBIDA = 25; // % sobre a comissão já recebida — pode mudar no futuro
 
 /* ═══════════════════════════════════════════════════════════════════════════
    1. DATA LAYER — Fonte única de verdade (substituível por API/Supabase)
@@ -82,12 +68,8 @@ const DB = {
   nextFechGestorId: 1,
 
   /* ── Regras de estorno ─────────────────────────────────────────────────── */
-  semEstorno: CONFIG.semEstorno,
-  acomp6: CONFIG.acomp6,
-  estornoFaixas: [
-    { de:1, ate:5, pct:0.25, maxParc:2 },
-    { de:6, ate:9, pct:0.75, maxParc:3 },
-  ],
+  semEstorno: ['APE', 'TP', 'TEP'],
+  acomp6: [],
 
   /* ── Vendas ────────────────────────────────────────────────────────────── */
   vendas: [],
@@ -97,31 +79,6 @@ const DB = {
   fechamentos: [],
   nextFechId: 1,
 
-  /* ── Tabela de comissão pessoal do SUPERVISOR (vendas próprias dela) ────── */
-  // Mesmos ids de tabela dos vendedores normais, percentuais diferentes.
-  // (Sobrescrita pelo Supabase em carregarDadosIniciais() se a tabela
-  // tabelas_comissao_supervisor existir no banco — senão, usa este fallback.)
-  tabelasSupervisor: [
-    { id:'SM',  nome:'Select Mais / SMA',  parcelas:[0.70,0.40,0.20,0.20,0.20,0,0,0,0,0,0,0] },
-    { id:'P01', nome:'P01 / P02',          parcelas:[0.70,0.40,0.20,0.20,0.20,0,0,0,0,0,0,0] },
-    { id:'BA',  nome:'BA / BI1 / BI2',     parcelas:[0.40,0.30,0.30,0.25,0.25,0,0,0,0,0,0,0] },
-    { id:'TSS', nome:'TSS',                parcelas:[0.70,0.40,0.20,0.20,0.20,0,0,0,0,0,0,0] },
-    { id:'PSE', nome:'PSE / ASE / PC2',    parcelas:[0.70,0.40,0.20,0.20,0.20,0,0,0,0,0,0,0] },
-    { id:'MB',  nome:'Moto / Serviço',     parcelas:[0.40,0.30,0.15,0.10,0.10,0.10,0,0,0,0,0,0] },
-    { id:'APE', nome:'APE / TP / TEP',     parcelas:[0.15,0.15,0.15,0.15,0.15,0.15,0.15,0.15,0,0,0,0] },
-    { id:'SEP', nome:'SEP',                parcelas:[0.70,0.40,0.20,0.20,0.20,0,0,0,0,0,0,0] },
-    { id:'TPF', nome:'TPF',                parcelas:[0.40,0.30,0.30,0.25,0.25,0,0,0,0,0,0,0] },
-    { id:'SPF', nome:'SPF',                parcelas:[0.70,0.40,0.20,0.20,0.20,0,0,0,0,0,0,0] },
-    { id:'ETA', nome:'EI1 / ETA / SUE',    parcelas:[0.25,0.25,0.25,0.25,0.25,0.25,0,0,0,0,0,0] },
-  ],
-
-  /* ── Regras de override do supervisor sobre a produção da equipe ────────── */
-  // "Tabela ruim" = APE/TP/TEP (id 'APE'). Todas as outras = "tabela boa".
-  regrasOverrideSupervisor: {
-    tabelasRuins: ['APE'],
-    boa:  [0.12, 0.06, 0.18],
-    ruim: [0.067, 0.067, 0.067],
-  },
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -246,8 +203,8 @@ const AppState = {
     inadimplencia: { filterSit: 'all', filterVend: null, sortCol: null, sortDir: 'asc' },
     estornos:      { filterVend: null, filterStatus: 'all' },
     remuneracao:   { mesSel: null },
-    comissaoSupervisor: { mesSel: null, supervisorId: null },
-    tabelas:       { expandida: null, expandidaSup: null, filterRef: 'all' },
+
+    tabelas:       { expandida: null, filterRef: 'all' },
     trabalho:      { vendId: null, filterSit: 'all' },
     clientes:      { search: '' },
     vendedores:    {},
@@ -481,9 +438,6 @@ function getTabelasVendedor(uid) {
 /* ── Lógica de Estorno / Inadimplência ───────────────────────────────────── */
 function temEstorno(tabId) { return !DB.semEstorno.includes(tabId); }
 function getPeriodoAcomp(tabId) { return DB.acomp6.includes(tabId) ? 6 : 10; }
-function getFaixaEstorno(parcN) {
-  return DB.estornoFaixas.find(f => parcN >= f.de && parcN <= f.ate) || null;
-}
 function parcCancelamento(venda) {
   const idx = venda.parcelas.findIndex(p => p.s === 'cancelado');
   return idx >= 0 ? idx + 1 : null;
@@ -501,21 +455,10 @@ function totalComissaoRecebida(venda) {
 
 function calcEstorno(venda) {
   if (!temEstorno(venda.tabela)) return null;
-
-  // NOVO: modelo Brusque — % fixo sobre a comissão já recebida até o cancelamento
-  if (CONFIG.modeloEstorno === 'percentualComissaoRecebida') {
-    const recebido = totalComissaoRecebida(venda);
-    if (recebido <= 0) return null;
-    const pct = CONFIG.percentualEstornoRecebida;
-    return { valor: recebido * pct / 100, pct, faixa: null, maxParc: 1, parcCancelamento: null, baseCalculo: 'comissao_recebida' };
-  }
-
-  // Modelo padrão (Cuiabá/BSF) — % do valor da venda, por faixa de parcela cancelada
-  const parc = parcCancelamento(venda);
-  if (!parc) return null;
-  const faixa = getFaixaEstorno(parc);
-  if (!faixa) return null;
-  return { valor: venda.valor * faixa.pct / 100, pct: faixa.pct, faixa: `${faixa.de}ª–${faixa.ate}ª`, maxParc: faixa.maxParc, parcCancelamento: parc, baseCalculo: 'valor_venda' };
+  // Regra de Brusque: % fixo sobre a comissão já recebida até o cancelamento
+  const recebido = totalComissaoRecebida(venda);
+  if (recebido <= 0) return null;
+  return { valor: recebido * PERCENTUAL_ESTORNO_RECEBIDA / 100, pct: PERCENTUAL_ESTORNO_RECEBIDA, faixa: null, maxParc: 1, parcCancelamento: null };
 }
 function situacao(venda) {
   if (venda.status === 'concluido')    return 'concluido';
@@ -556,115 +499,18 @@ function vendorName(id) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   NOVO — Funções de SUPERVISOR
+   Escopo de dados por role — Brusque só tem gestor e vendedor comum
    ═══════════════════════════════════════════════════════════════════════════ */
-function isSupervisor(vendId) {
-  const v = DB.vendedores.find(x => x.id === vendId);
-  return v?.role === 'supervisor';
-}
-
-// Ids dos vendedores que reportam a este supervisor
-function equipeDoSupervisor(supervisorId) {
-  return DB.vendedores.filter(v => v.supervisorId === supervisorId).map(v => v.id);
-}
-
-// Vendas visíveis para o usuário logado, respeitando o escopo de cada role
 function vendasNoEscopo(u) {
   const isG = (u.role === 'gestor' || u.role === 'adm');
   if (isG) return DB.vendas;
-  if (u.role === 'supervisor') {
-    const ids = [u.id, ...equipeDoSupervisor(u.id)];
-    return DB.vendas.filter(v => ids.includes(v.vendedor));
-  }
   return DB.vendas.filter(v => v.vendedor === u.id);
 }
 
-// Lista de vendedores visível no dropdown de filtro, por role
 function vendedoresNoEscopo(u) {
   const isG = (u.role === 'gestor' || u.role === 'adm');
   if (isG) return DB.vendedores;
-  if (u.role === 'supervisor') {
-    const ids = [u.id, ...equipeDoSupervisor(u.id)];
-    return DB.vendedores.filter(v => ids.includes(v.id));
-  }
   return [DB.vendedores.find(v => v.id === u.id)].filter(Boolean);
-}
-
-/*
-  Comissão PESSOAL do supervisor (vendas que ele mesmo cadastra para si).
-  Usa a tabela específica (DB.tabelasSupervisor) — NÃO entra na produção da equipe.
-*/
-function calcComissaoSupervisorPessoal(supervisorId, mes) {
-  const vendas = DB.vendas.filter(v => v.vendedor === supervisorId && v.status !== 'cancelado');
-  const producao = [], recorrencia = [];
-
-  vendas.forEach(v => {
-    const tab = DB.tabelasSupervisor.find(t => t.id === v.tabela);
-    calcParcelas(v, DB.tabelasSupervisor).forEach((p, i) => {
-      if (!p.ativa || p.mesRecebimento !== mes) return;
-      const statusParcCliente = v.parcelas[i]?.s;
-      if (p.n > 1 && statusParcCliente !== 'pago') return;
-
-      const item = {
-        cliente: v.cliente, contrato: v.contrato, tabela: v.tabela,
-        tabelaNome: tab?.nome || v.tabela,
-        n: p.n, parc: p.n, valor: p.valor, pct: p.pct,
-        dataVencCliente: p.dataVencCliente, dataPgto: p.dataPgto,
-      };
-      if (p.n === 1) producao.push(item); else recorrencia.push(item);
-    });
-  });
-
-  return { producao, recorrencia };
-}
-
-/*
-  Override do supervisor sobre a produção da EQUIPE (nunca a venda dele mesmo).
-  Só nas 3 primeiras parcelas de cada venda do vendedor, sobre o valor da venda.
-  Tabela "ruim" (APE/TP/TEP) usa percentuais menores; demais usam os percentuais "boa".
-*/
-function calcOverrideSupervisorMes(supervisorId, mes) {
-  const equipe = equipeDoSupervisor(supervisorId);
-  const itens = [];
-
-  equipe.forEach(vendId => {
-    const vendas = DB.vendas.filter(v => v.vendedor === vendId && v.status !== 'cancelado');
-    vendas.forEach(v => {
-      const ehRuim = DB.regrasOverrideSupervisor.tabelasRuins.includes(v.tabela);
-      const pcts   = ehRuim ? DB.regrasOverrideSupervisor.ruim : DB.regrasOverrideSupervisor.boa;
-
-      calcParcelas(v).forEach((p, i) => {
-        if (!p.ativa || p.n > 3) return;
-        if (p.mesRecebimento !== mes) return;
-        const statusParcCliente = v.parcelas[i]?.s;
-        if (p.n > 1 && statusParcCliente !== 'pago') return;
-
-        const pctOverride = pcts[p.n - 1];
-        if (!pctOverride) return;
-
-        itens.push({
-          cliente: v.cliente, contrato: v.contrato, vendedor: vendId,
-          tabela: v.tabela, n: p.n, parc: p.n,
-          valor: v.valor * pctOverride / 100,
-          pct: pctOverride,
-          dataVencCliente: p.dataVencCliente, dataPgto: p.dataPgto,
-        });
-      });
-    });
-  });
-
-  return itens;
-}
-
-// Junta comissão pessoal + override num único resumo mensal do supervisor
-function calcComissaoSupervisorTotal(supervisorId, mes) {
-  const { producao, recorrencia } = calcComissaoSupervisorPessoal(supervisorId, mes);
-  const override = calcOverrideSupervisorMes(supervisorId, mes);
-
-  const vPessoal  = producao.reduce((a,i)=>a+i.valor,0) + recorrencia.reduce((a,i)=>a+i.valor,0);
-  const vOverride = override.reduce((a,i)=>a+i.valor,0);
-
-  return { producao, recorrencia, override, vPessoal, vOverride, total: vPessoal + vOverride };
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -681,7 +527,7 @@ const Router = {
     estornos:      { label: 'Estornos',      icon: '✕', section: 'comercial', render: renderEstornos },
     trabalho:      { label: 'Relatório de Trabalho', icon: '', section: 'comercial', render: renderRelatorioTrabalho },
     remuneracao:   { label: 'Comissão WCON', icon: '★', section: 'gestor', render: renderRemuneracao },
-    comissaoSupervisor: { label: 'Comissão Supervisor', icon: '☆', section: 'gestor', render: renderComissaoSupervisor },
+
     tabelas:       { label: 'Tabelas',       icon: '≡', section: 'configuracao', render: renderTabelas },
     configuracoes: { label: 'Configurações', icon: '⊙', section: 'configuracao', render: renderConfiguracoes },
   },
@@ -744,7 +590,7 @@ function resolveUserByEmail(authUser) {
   }
   const vend = DB.vendedores.find(v => (v.email || '').toLowerCase() === authEmail);
   // NOVO: preserva o role vindo do banco (supervisor) em vez de forçar 'vendedor'
-  if (vend) return { ...vend, role: vend.role === 'supervisor' ? 'supervisor' : 'vendedor' };
+  if (vend) return { ...vend, role: 'vendedor' };
   return null;
 }
 
@@ -1215,16 +1061,9 @@ function buildSidebar() {
     configuracao: 'Sistema',
   };
 
-  // NOVO: gestor também vê a aba Comissão Supervisor (pra acompanhar a Angélica)
-  // — só quando a unidade usa esse modelo (CONFIG.habilitarSupervisorFeature)
-  let visibles = isG
-    ? ['dashboard','vendedores','clientes','relatorio','comissao','inadimplencia','estornos','trabalho','remuneracao','comissaoSupervisor','tabelas','configuracoes']
-    : isSup
-      ? ['dashboard','relatorio','comissao','comissaoSupervisor','inadimplencia','estornos','trabalho','tabelas']
-      : ['dashboard','relatorio','comissao','inadimplencia','estornos','trabalho','tabelas'];
-  if (!CONFIG.habilitarSupervisorFeature) {
-    visibles = visibles.filter(v => v !== 'comissaoSupervisor');
-  }
+  const visibles = isG
+    ? ['dashboard','vendedores','clientes','relatorio','comissao','inadimplencia','estornos','trabalho','remuneracao','tabelas','configuracoes']
+    : ['dashboard','relatorio','comissao','inadimplencia','estornos','trabalho','tabelas'];
 
   const badges = {
     inadimplencia: DB.vendas.filter(v => v.status === 'inadimplente' && (isG ? true : vendasNoEscopo(u).some(x=>x.id===v.id))).length,
@@ -1880,91 +1719,6 @@ async function salvarNovoVendedor() {
   }
 }
 
-// NOVO: Promover/gerenciar Supervisor — abre o modal já preenchido
-let _supervisorTarget = null;
-function abrirGerenciarSupervisor(vendedorId) {
-  const v = DB.vendedores.find(x => x.id === vendedorId);
-  if (!v) return;
-  _supervisorTarget = vendedorId;
-
-  document.getElementById('msv-sub').textContent = `Vendedor: ${v.nome}`;
-  document.getElementById('msv-eh-supervisor').checked = v.role === 'supervisor';
-
-  // Lista todos os outros vendedores (exclui ele mesmo) pra marcar quem é equipe dele
-  const outros = DB.vendedores.filter(x => x.id !== vendedorId && x.role !== 'supervisor');
-  document.getElementById('msv-equipe-lista').innerHTML = outros.map(x => `
-    <label style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px;cursor:pointer">
-      <input type="checkbox" value="${x.id}" ${x.supervisorId === vendedorId ? 'checked' : ''}>
-      <span>${x.nome}${x.supervisorId && x.supervisorId !== vendedorId ? ` <span style="color:var(--text3);font-size:11px">(hoje com outro supervisor)</span>` : ''}</span>
-    </label>`).join('') || '<div style="font-size:12px;color:var(--text3)">Nenhum outro vendedor cadastrado.</div>';
-
-  toggleEquipeSupervisorUI();
-  openModal('m-supervisor');
-}
-
-function toggleEquipeSupervisorUI() {
-  const eh = document.getElementById('msv-eh-supervisor')?.checked;
-  const wrap = document.getElementById('msv-equipe-wrap');
-  if (wrap) wrap.style.display = eh ? 'block' : 'none';
-}
-
-async function salvarGerenciarSupervisor() {
-  const vendedorId = _supervisorTarget;
-  if (!vendedorId) return;
-  const v = DB.vendedores.find(x => x.id === vendedorId);
-  if (!v) return;
-
-  const ehSupervisor = document.getElementById('msv-eh-supervisor').checked;
-  const equipeSelecionada = ehSupervisor
-    ? [...document.querySelectorAll('#msv-equipe-lista input:checked')].map(c => c.value)
-    : [];
-
-  const btn = document.querySelector('#m-supervisor .btn-primary');
-  if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
-
-  try {
-    // 1. Atualiza o role do próprio vendedor
-    const novoRole = ehSupervisor ? 'supervisor' : 'vendedor';
-    const { error: errRole } = await Supabase.from('vendedores').update({ role: novoRole }).eq('id', vendedorId);
-    if (errRole) throw errRole;
-    v.role = novoRole;
-
-    // 2. Remove da equipe quem estava com este supervisor mas foi desmarcado
-    const antigos = DB.vendedores.filter(x => x.supervisorId === vendedorId && !equipeSelecionada.includes(x.id));
-    for (const ant of antigos) {
-      const { error } = await Supabase.from('vendedores').update({ supervisor_id: null }).eq('id', ant.id);
-      if (error) throw error;
-      ant.supervisorId = null;
-    }
-
-    // 3. Atribui supervisor_id a quem foi marcado agora
-    for (const id of equipeSelecionada) {
-      const membro = DB.vendedores.find(x => x.id === id);
-      if (!membro || membro.supervisorId === vendedorId) continue;
-      const { error } = await Supabase.from('vendedores').update({ supervisor_id: vendedorId }).eq('id', id);
-      if (error) throw error;
-      membro.supervisorId = vendedorId;
-    }
-
-    closeModal('m-supervisor');
-    Dialog.success(ehSupervisor ? 'Supervisor configurado' : 'Role removida', [
-      { tipo:'destaque', label:'Vendedor', valor: v.nome },
-      ehSupervisor
-        ? { tipo:'destaque', label:'Equipe', valor: `${equipeSelecionada.length} vendedor(es)` }
-        : 'Este vendedor voltou a ser um vendedor comum.',
-      { tipo:'divisor' },
-      'A pessoa precisa deslogar e logar de novo (ou dar refresh) pra ver o menu atualizado.',
-    ]);
-    rerenderModule('vendedores');
-    buildSidebar();
-  } catch(e) {
-    console.error('Erro ao salvar supervisor:', e);
-    Dialog.alert('Erro ao salvar', ['Não foi possível salvar no banco de dados. Verifique sua conexão.']);
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = 'Salvar'; }
-  }
-}
-
 function renderVendedores() {
   const u = AppState.user;
   const isGestorPuro = (u.role === 'gestor' || u.role === 'adm');
@@ -1986,7 +1740,7 @@ function renderVendedores() {
         <div style="display:flex;align-items:center;gap:10px">
           <div style="width:30px;height:30px;border-radius:8px;background:var(--gold-dim);border:1px solid var(--gold-glow);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--gold);overflow:hidden">${v.foto ? `<img src="${v.foto}" style="width:100%;height:100%;object-fit:cover">` : initials(v.nome)}</div>
           <div>
-            <div style="font-weight:600;font-size:13px">${v.nome}${v.role==='supervisor' ? ' <span class="badge badge-purple" style="font-size:8px">SUPERVISOR</span>' : ''}</div>
+            <div style="font-weight:600;font-size:13px">${v.nome}</div>
             <div style="font-size:11px;color:var(--text3);font-family:var(--mono)">${v.email}</div>
           </div>
         </div>
@@ -2018,7 +1772,6 @@ function renderVendedores() {
         <div style="display:flex;gap:6px">
           <button class="btn btn-ghost btn-sm btn-icon" onclick="Router.navigate('relatorio')" title="Ver relatório">▦</button>
           ${isGestorPuro ? `<button class="btn btn-ghost btn-sm btn-icon" onclick="abrirAcessoTabelas('${v.id}')" title="Tabelas liberadas para este vendedor">🔑</button>` : ''}
-          ${isGestorPuro ? `<button class="btn btn-ghost btn-sm btn-icon" onclick="abrirGerenciarSupervisor('${v.id}')" title="Promover a supervisor / gerenciar equipe" style="color:var(--purple)">⭐</button>` : ''}
           ${isGestorPuro ? `<button class="btn btn-ghost btn-sm btn-icon" onclick="excluirVendedorUI('${v.id}')" title="Excluir vendedor" style="color:var(--red)">✕</button>` : ''}
         </div>
       </td>
@@ -2090,33 +1843,6 @@ function renderVendedores() {
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeModal('m-vendedor')">Cancelar</button>
       <button class="btn btn-primary" onclick="salvarNovoVendedor()">Salvar vendedor</button>
-    </div>
-  </div>
-</div>
-
-<!-- NOVO: Modal Promover/Gerenciar Supervisor -->
-<div class="overlay" id="m-supervisor">
-  <div class="modal" style="max-width:520px">
-    <button class="btn btn-ghost btn-icon no-print" onclick="closeModal('m-supervisor')" style="position:absolute;top:14px;right:14px">✕</button>
-    <div class="modal-title">Promover a Supervisor</div>
-    <div class="modal-sub" id="msv-sub"></div>
-
-    <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-bottom:16px;padding:10px 12px;background:var(--ink3);border-radius:8px">
-      <input type="checkbox" id="msv-eh-supervisor" onchange="toggleEquipeSupervisorUI()">
-      <span>Este vendedor é <strong>Supervisor</strong> (comissão própria + override sobre a equipe abaixo)</span>
-    </label>
-
-    <div id="msv-equipe-wrap">
-      <div class="form-divider">Equipe sob este supervisor</div>
-      <div style="font-size:11px;color:var(--text3);margin-bottom:10px">
-        Marque quem reporta a ele(a). O override é calculado sobre a produção de quem estiver marcado aqui.
-      </div>
-      <div id="msv-equipe-lista" style="max-height:280px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;padding:10px"></div>
-    </div>
-
-    <div class="modal-actions">
-      <button class="btn btn-ghost" onclick="closeModal('m-supervisor')">Cancelar</button>
-      <button class="btn btn-primary" onclick="salvarGerenciarSupervisor()">Salvar</button>
     </div>
   </div>
 </div>`;
@@ -3219,7 +2945,7 @@ function renderComissao() {
   });
   const todosFechs = isG
     ? (st.filterVend ? DB.fechamentos.filter(f => f.vendedor === st.filterVend) : DB.fechamentos)
-    : DB.fechamentos.filter(f => f.vendedor === u.id || (isSup && equipeDoSupervisor(u.id).includes(f.vendedor)));
+    : DB.fechamentos.filter(f => f.vendedor === u.id);
   todosFechs.forEach(f => mesesSet.add(f.mes));
 
   const mesesDisp = [...mesesSet].sort();
@@ -3262,38 +2988,6 @@ function renderComissao() {
   const vendorTabs = (isG || isSup) ? renderVendorFilter(st.filterVend, "AppState.modulo.comissao.filterVend", 'comissao', vendedoresNoEscopo(u)) : '';
 
   const fechCards = todosVendedores.map(vend => {
-    // NOVO: supervisor tem tabela e regra de comissão próprias — não usa
-    // calcComissaoMes (tabela de vendedor comum). Mostra um card resumido
-    // aqui e direciona pro detalhe completo na aba "Comissão Supervisor".
-    if (vend.role === 'supervisor') {
-      const { vPessoal, vOverride, total } = calcComissaoSupervisorTotal(vend.id, st.mesSel);
-      if (vPessoal === 0 && vOverride === 0) return '';
-      return `<div class="card" style="margin-bottom:16px">
-        <div class="card-header">
-          <span class="card-title">${vend.nome} <span class="badge badge-purple" style="font-size:8px;margin-left:6px">SUPERVISOR</span></span>
-          <button class="btn btn-ghost btn-sm" onclick="Router.navigate('comissaoSupervisor')">👁 Ver detalhe completo</button>
-        </div>
-        <div style="padding:14px 16px">
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px">
-            <div style="background:var(--ink3);border-radius:8px;padding:12px">
-              <div style="font-size:9px;font-weight:700;color:var(--text3);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px">Comissão pessoal</div>
-              <div style="font-size:16px;font-weight:700;font-family:var(--mono);color:var(--green)">${fmt(vPessoal)}</div>
-              <div style="font-size:10px;color:var(--text3);margin-top:2px">Vendas próprias · tabela supervisor</div>
-            </div>
-            <div style="background:var(--ink3);border-radius:8px;padding:12px">
-              <div style="font-size:9px;font-weight:700;color:var(--text3);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px">Override equipe</div>
-              <div style="font-size:16px;font-weight:700;font-family:var(--mono);color:var(--purple)">${fmt(vOverride)}</div>
-              <div style="font-size:10px;color:var(--text3);margin-top:2px">Sobre a produção da equipe</div>
-            </div>
-            <div style="background:var(--brand-dim);border:1px solid var(--brand-border);border-radius:8px;padding:12px">
-              <div style="font-size:9px;font-weight:700;color:var(--brand);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px">Total</div>
-              <div style="font-size:18px;font-weight:800;font-family:var(--mono);color:var(--brand)">${fmt(total)}</div>
-            </div>
-          </div>
-        </div>
-      </div>`;
-    }
-
     const vendasVend = vendasDoVendedor(vend.id).filter(v => v.status !== 'cancelado');
     const { producao, recorrencia } = calcComissaoMes(vendasVend, st.mesSel);
     const fech = fechsMes.find(f => f.vendedor === vend.id);
@@ -4744,46 +4438,6 @@ function renderTabelas() {
     return t ? `<span class="chip">${t.nome}</span>` : '';
   }).join(' ');
 
-  // NOVO: cards da tabela de comissão do SUPERVISOR — visualmente separados,
-  // usam estado de expansão próprio (st.expandidaSup) pra não colidir com os
-  // ids das tabelas normais (que se repetem: SM, APE, etc.)
-  const cardsSupervisor = (DB.tabelasSupervisor || []).map(tab => {
-    const ativas = tab.parcelas.filter(p => p > 0);
-    const total  = ativas.length;
-    const expanded = st.expandidaSup === tab.id;
-
-    const parcItems = tab.parcelas.map((pct, i) => {
-      const zero = pct === 0;
-      return `<div class="parc-item${zero ? ' zero' : ''}">
-        <div class="parc-n">${i + 1}ª parc.</div>
-        <div class="parc-pct">${zero ? '—' : (pct * 100).toFixed(1) + '%'}</div>
-      </div>`;
-    }).join('');
-
-    return `<div class="tabela-card" style="border-left:3px solid var(--purple)">
-      <div class="tabela-header" onclick="toggleTabelaSupervisor('${tab.id}')">
-        <div>
-          <div class="tabela-name">${tab.nome}</div>
-          <div class="tabela-ref">Tabela Supervisor · id ${tab.id}</div>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <span class="chip">${total} parcelas ativas</span>
-          <button class="btn btn-ghost btn-sm btn-icon">${expanded ? '▴' : '▾'}</button>
-        </div>
-      </div>
-      <div class="tabela-body${expanded ? ' open' : ''}">
-        <div class="parc-grid">${parcItems}</div>
-        ${isGestorPuro ? `
-        <div style="display:flex;gap:8px;margin-top:14px">
-          <button class="btn btn-ghost btn-sm" onclick="editarTabelaSupervisor('${tab.id}')">✎ Editar</button>
-        </div>` : ''}
-      </div>
-    </div>`;
-  }).join('');
-
-  const regras = DB.regrasOverrideSupervisor || { tabelasRuins: [], boa: [0,0,0], ruim: [0,0,0] };
-  const nomesRuins = regras.tabelasRuins.map(id => DB.tabelasSupervisor.find(t=>t.id===id)?.nome || id).join(', ');
-
   return `
 <div class="page-header">
   <div>
@@ -4792,36 +4446,6 @@ function renderTabelas() {
   </div>
   ${isGestorPuro ? `<div class="page-actions"><button class="btn btn-primary btn-sm" onclick="abrirNovaTabela()">+ Nova tabela</button></div>` : ''}
 </div>
-
-${isG && CONFIG.habilitarSupervisorFeature ? `
-<div class="card" style="margin-bottom:24px;border:1px solid var(--purple);border-top:2px solid var(--purple)">
-  <div class="card-header" style="background:var(--purple-dim)">
-    <span class="card-title">⭐ Tabela Supervisor <span class="chip" style="margin-left:6px">role: supervisor</span></span>
-  </div>
-  <div class="card-body">
-    <p style="font-size:12px;color:var(--text2);margin-bottom:14px">
-      Percentuais de comissão <strong>pessoal</strong> de quem tem o role Supervisor (vendas que ele(a) cadastra pra si mesmo).
-      Essa configuração é da <strong>função</strong>, não da pessoa — se você promover outro vendedor no futuro, ele(a) já herda esta mesma tabela automaticamente.
-    </p>
-    ${cardsSupervisor}
-    <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--line)">
-      <div class="form-divider">Regras de override sobre a produção da equipe</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:8px">
-        <div style="background:#EAF3DE;border:1px solid #C0DD97;border-radius:8px;padding:12px">
-          <div style="font-size:10px;font-weight:700;color:#27500A;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">TABELAS PRIME</div>
-          <div style="font-family:var(--mono);font-size:13px;color:#27500A">${regras.boa.map(p=>p+'%').join(' + ')} <span style="opacity:.75">= ${regras.boa.reduce((a,b)=>a+b,0).toFixed(2)}%</span></div>
-          <div style="font-size:10px;color:#27500A;opacity:.75;margin-top:4px">1ª / 2ª / 3ª parcela · qualquer tabela exceto a Básica ao lado</div>
-        </div>
-        <div style="background:#FAEEDA;border:1px solid #FAC775;border-radius:8px;padding:12px">
-          <div style="font-size:10px;font-weight:700;color:#7A4A0A;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">TABELA BÁSICA</div>
-          <div style="font-family:var(--mono);font-size:13px;color:#7A4A0A">${regras.ruim.map(p=>p+'%').join(' + ')} <span style="opacity:.75">= ${regras.ruim.reduce((a,b)=>a+b,0).toFixed(2)}%</span></div>
-          <div style="font-size:10px;color:#7A4A0A;opacity:.75;margin-top:4px">${nomesRuins || '—'}</div>
-        </div>
-      </div>
-      <div style="font-size:10px;color:var(--text3);margin-top:10px">Override incide sobre o valor da venda, só nas 3 primeiras parcelas, nunca sobre a venda do próprio supervisor. Pra mudar esses percentuais, me chama que eu ajusto o código.</div>
-    </div>
-  </div>
-</div>` : ''}
 
 <div class="filter-bar">${pills}</div>
 
@@ -4879,18 +4503,11 @@ ${isG && CONFIG.habilitarSupervisorFeature ? `
       </div>
     </div>
     <div style="margin-top:16px">
-      <div class="form-divider">Faixas de estorno</div>
-      <div class="table-wrap"><table>
-        <thead><tr><th>Faixa de cancelamento</th><th>% sobre crédito</th><th>Parcelamento máx.</th></tr></thead>
-        <tbody>
-          ${DB.estornoFaixas.map(f => `<tr>
-            <td>${f.de}ª à ${f.ate}ª parcela</td>
-            <td class="td-mono">${f.pct}%</td>
-            <td class="td-mono">${f.maxParc}x</td>
-          </tr>`).join('')}
-          <tr><td>10ª parcela em diante</td><td class="td-mono">—</td><td class="td-mono">Sem estorno</td></tr>
-        </tbody>
-      </table></div>
+      <div class="form-divider">Regra de estorno em vigor</div>
+      <div style="background:var(--red-dim);border:1px solid var(--brand-border);border-radius:8px;padding:14px">
+        <div style="font-size:13px;font-weight:700;color:var(--brand);margin-bottom:4px">${PERCENTUAL_ESTORNO_RECEBIDA}% sobre a comissão já recebida</div>
+        <div style="font-size:12px;color:var(--text2)">Se a venda for cancelada, o vendedor devolve ${PERCENTUAL_ESTORNO_RECEBIDA}% de tudo que já recebeu de comissão até o cancelamento (não é sobre o valor da venda, é sobre o que já entrou no bolso).</div>
+      </div>
     </div>
   </div>
 </div>
@@ -4939,28 +4556,6 @@ ${isG && CONFIG.habilitarSupervisorFeature ? `
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeModal('m-nova-tab')">Cancelar</button>
       <button class="btn btn-primary" onclick="salvarNovaTabela()">Salvar tabela →</button>
-    </div>
-  </div>
-</div>
-
-<!-- NOVO: Modal Editar Tabela Supervisor -->
-<div class="overlay" id="m-tab-sup">
-  <div class="modal" style="width:640px">
-    <button class="modal-close" onclick="closeModal('m-tab-sup')">✕</button>
-    <div class="modal-title">Editar tabela do Supervisor — <span id="mts-nome"></span></div>
-    <div class="modal-sub">Percentuais da comissão pessoal de quem tem o role Supervisor</div>
-    <div class="form-divider">Percentuais por parcela (0 = inativo)</div>
-    <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:16px">
-      ${[1,2,3,4,5,6,7,8,9,10,11,12].map(n => `
-        <div class="form-group" style="margin-bottom:0">
-          <label style="font-size:9px">${n}ª parcela</label>
-          <input type="number" id="mts-p${n}" placeholder="0.00" step="0.01" min="0" max="5"
-            style="padding:7px 8px;font-size:12px;font-family:var(--mono)">
-        </div>`).join('')}
-    </div>
-    <div class="modal-actions">
-      <button class="btn btn-ghost" onclick="closeModal('m-tab-sup')">Cancelar</button>
-      <button class="btn btn-primary" onclick="salvarTabelaSupervisor()">Salvar</button>
     </div>
   </div>
 </div>`;
@@ -5055,48 +4650,6 @@ async function toggleAtivoTabela(tabId) {
 
 function toggleTabela(id) {
   AppState.modulo.tabelas.expandida = AppState.modulo.tabelas.expandida === id ? null : id;
-  rerenderModule('tabelas');
-}
-
-function toggleTabelaSupervisor(id) {
-  AppState.modulo.tabelas.expandidaSup = AppState.modulo.tabelas.expandidaSup === id ? null : id;
-  rerenderModule('tabelas');
-}
-
-// NOVO: edição da tabela de comissão do supervisor (persiste em
-// tabelas_comissao_supervisor no Supabase, se essa tabela existir no banco)
-let _tabSupervisorTarget = null;
-function editarTabelaSupervisor(tabId) {
-  if (!document.getElementById('m-tab-sup')) { rerenderModule('tabelas'); setTimeout(() => editarTabelaSupervisor(tabId), 150); return; }
-  const tab = DB.tabelasSupervisor.find(t => t.id === tabId);
-  if (!tab) return;
-  _tabSupervisorTarget = tabId;
-  document.getElementById('mts-nome').textContent = tab.nome;
-  [1,2,3,4,5,6,7,8,9,10,11,12].forEach((n,i) => {
-    const el = document.getElementById(`mts-p${n}`);
-    if (el) el.value = tab.parcelas[i] > 0 ? tab.parcelas[i] : '';
-  });
-  openModal('m-tab-sup');
-}
-
-async function salvarTabelaSupervisor() {
-  const tabId = _tabSupervisorTarget;
-  if (!tabId) return;
-  const parcelas = [1,2,3,4,5,6,7,8,9,10,11,12].map(n => parseFloat(document.getElementById(`mts-p${n}`)?.value) || 0);
-
-  try {
-    const { error } = await Supabase.from('tabelas_comissao_supervisor').update({ parcelas }).eq('id', tabId);
-    if (error) throw error;
-  } catch(e) {
-    console.warn('Não foi possível persistir no Supabase (tabela pode não existir ainda):', e.message);
-    // Não bloqueia — segue e atualiza só na memória, já que o cálculo usa DB.tabelasSupervisor
-  }
-
-  const tab = DB.tabelasSupervisor.find(t => t.id === tabId);
-  if (tab) tab.parcelas = parcelas;
-
-  closeModal('m-tab-sup');
-  Dialog.success('Tabela do supervisor atualizada', [{ tipo:'destaque', label:'Tabela', valor: tab?.nome || tabId }]);
   rerenderModule('tabelas');
 }
 
@@ -5791,393 +5344,6 @@ function verDemonstrativoGestor(mes) {
   </div>`;
 
   openModal('m-demo-g');
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   16B. MÓDULO NOVO: COMISSÃO SUPERVISOR
-   ═══════════════════════════════════════════════════════════════════════════ */
-function renderComissaoSupervisor() {
-  const u = AppState.user;
-  const isG = (u.role === 'gestor' || u.role === 'adm');
-  const isSup = u.role === 'supervisor';
-  if (!isG && !isSup) return '<div class="empty-state"><div class="empty-title">Acesso restrito</div></div>';
-
-  const st = AppState.modulo.comissaoSupervisor;
-
-  // Se for supervisor, só vê a própria comissão. Se for gestor, escolhe qual
-  // supervisor quer ver (útil se no futuro houver mais de um).
-  const supervisores = DB.vendedores.filter(v => v.role === 'supervisor');
-  let supervisorId;
-  if (isSup) {
-    supervisorId = u.id;
-  } else {
-    if (!st.supervisorId || !supervisores.some(s => s.id === st.supervisorId)) {
-      st.supervisorId = supervisores[0]?.id || null;
-    }
-    supervisorId = st.supervisorId;
-  }
-
-  if (!supervisorId) {
-    return `<div class="page-header"><div><div class="page-title">Comissão Supervisor</div></div></div>
-    <div class="empty-state"><div class="empty-icon">☆</div><div class="empty-title">Nenhum supervisor cadastrado</div><div class="empty-sub">Marque um vendedor com role "supervisor" no banco de dados</div></div>`;
-  }
-
-  const supervisorInfo = DB.vendedores.find(v => v.id === supervisorId);
-
-  const seletorSupervisor = (isG && supervisores.length > 0) ? `
-  <div class="vendor-filter" style="margin-bottom:16px">
-    <select class="form-input vendor-filter-select" onchange="AppState.modulo.comissaoSupervisor.supervisorId=this.value;rerenderModule('comissaoSupervisor')">
-      ${supervisores.map(s => `<option value="${s.id}"${s.id===supervisorId?' selected':''}>${s.nome}</option>`).join('')}
-    </select>
-  </div>` : '';
-
-  const equipe = equipeDoSupervisor(supervisorId);
-  const vendasPropias = DB.vendas.filter(v => v.vendedor === supervisorId);
-  const vendasEquipe  = DB.vendas.filter(v => equipe.includes(v.vendedor));
-  const mesesSet = new Set();
-  // Venda própria: comissão pessoal vale por todas as parcelas da tabela dela
-  vendasPropias.forEach(v => {
-    if (v.status === 'cancelado') return;
-    calcParcelas(v, DB.tabelasSupervisor).forEach(p => { if (p.ativa) mesesSet.add(p.mesRecebimento); });
-  });
-  // Venda da equipe: override só existe nas 3 primeiras parcelas — não faz
-  // sentido listar meses distantes (4ª parcela em diante) que não geram nada pra ela
-  vendasEquipe.forEach(v => {
-    if (v.status === 'cancelado') return;
-    calcParcelas(v).forEach(p => { if (p.ativa && p.n <= 3) mesesSet.add(p.mesRecebimento); });
-  });
-  const mesesDisp = [...mesesSet].sort();
-  if (!mesesDisp.includes(todayMes())) mesesDisp.push(todayMes());
-  mesesDisp.sort();
-  if (!st.mesSel || !mesesDisp.includes(st.mesSel)) st.mesSel = mesesDisp[mesesDisp.length - 1] || todayMes();
-
-  const { producao, recorrencia, override, vPessoal, vOverride, total } =
-    calcComissaoSupervisorTotal(supervisorId, st.mesSel);
-
-  const mesNav = renderMesNav(mesesDisp, st.mesSel, "AppState.modulo.comissaoSupervisor.mesSel", 'comissaoSupervisor');
-
-  const rowsPessoalProd = producao.map(p => `<tr>
-    <td><div style="font-weight:600;font-size:12px">${p.cliente}</div>
-        <div style="font-size:10px;color:var(--text3);font-family:var(--mono)">${p.contrato} · ${p.tabelaNome}</div></td>
-    <td class="td-mono">${fmtDate(p.dataVencCliente)}</td>
-    <td class="td-mono" style="color:var(--brand)">${fmtDate(p.dataPgto)}</td>
-    <td class="td-mono" style="color:var(--green);font-weight:600">${fmt(p.valor)}</td>
-    <td class="td-mono" style="color:var(--text3)">${p.pct}%</td>
-  </tr>`).join('');
-
-  const rowsPessoalRec = recorrencia.map(p => `<tr>
-    <td><div style="font-weight:600;font-size:12px">${p.cliente}</div>
-        <div style="font-size:10px;color:var(--text3);font-family:var(--mono)">${p.contrato} · <span style="color:var(--blue)">${p.parc}ª parcela</span> · ${p.tabelaNome}</div></td>
-    <td class="td-mono">${fmtDate(p.dataVencCliente)}</td>
-    <td class="td-mono" style="color:var(--brand)">${fmtDate(p.dataPgto)}</td>
-    <td class="td-mono" style="color:var(--blue);font-weight:600">${fmt(p.valor)}</td>
-    <td class="td-mono" style="color:var(--text3)">${p.pct}%</td>
-  </tr>`).join('');
-
-  const rowsOverride = override.map(p => `<tr>
-    <td><div style="font-weight:600;font-size:12px">${p.cliente}</div>
-        <div style="font-size:10px;color:var(--text3);font-family:var(--mono)">${p.contrato} · ${p.n}ª parcela · ${vendorName(p.vendedor)}</div></td>
-    <td class="td-mono">${fmtDate(p.dataVencCliente)}</td>
-    <td class="td-mono" style="color:var(--brand)">${fmtDate(p.dataPgto)}</td>
-    <td class="td-mono" style="color:var(--purple);font-weight:600">${fmt(p.valor)}</td>
-    <td class="td-mono" style="color:var(--text3)">${p.pct}%</td>
-  </tr>`).join('');
-
-  const thHTML = `<tr style="background:var(--ink4)">
-    <th style="padding:7px 10px;font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase">Cliente / Contrato</th>
-    <th style="padding:7px 10px;font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase">Venc. cliente</th>
-    <th style="padding:7px 10px;font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase">Pgto comissão</th>
-    <th style="padding:7px 10px;font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase">Valor</th>
-    <th style="padding:7px 10px;font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase">%</th>
-  </tr>`;
-
-  return `
-<div class="page-header">
-  <div>
-    <div class="page-title">Comissão Supervisor</div>
-    <div class="page-sub">// ${supervisorInfo?.nome || ''} · comissão pessoal + override sobre a equipe · ${mesLabel(st.mesSel)}</div>
-  </div>
-  <div class="page-actions no-print">
-    <button class="btn btn-ghost btn-sm" onclick="verDemonstrativoSupervisor('${supervisorId}','${st.mesSel}')">👁 Demonstrativo</button>
-    <button class="btn btn-ghost btn-sm" onclick="window.print()">🖨 Imprimir</button>
-  </div>
-</div>
-${seletorSupervisor}
-
-<div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:18px">
-  <div class="stat-card blue">
-    <div class="stat-label">Comissão pessoal</div>
-    <div class="stat-value">${fmt(vPessoal)}</div>
-    <div class="stat-meta">Vendas próprias (tabela supervisor)</div>
-  </div>
-  <div class="stat-card purple">
-    <div class="stat-label">Override equipe</div>
-    <div class="stat-value">${fmt(vOverride)}</div>
-    <div class="stat-meta">${override.length} parcela(s) da equipe</div>
-  </div>
-  <div class="stat-card red">
-    <div class="stat-label">Total a receber</div>
-    <div class="stat-value">${fmt(total)}</div>
-    <div class="stat-meta">Valor líquido deste mês</div>
-  </div>
-</div>
-
-<div class="month-nav">${mesNav}</div>
-
-<div class="card">
-  <div class="card-header"><span class="card-title">Comissão pessoal — vendas próprias</span></div>
-  <div class="table-wrap">
-    <table>
-      <thead>${producao.length || recorrencia.length ? thHTML : ''}</thead>
-      <tbody>
-        ${producao.length ? `<tr><td colspan="5" style="padding:6px 12px;background:var(--ink4);font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase">PRODUÇÃO — 1ª parcelas</td></tr>${rowsPessoalProd}` : ''}
-        ${recorrencia.length ? `<tr><td colspan="5" style="padding:6px 12px;background:var(--ink4);font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase">RECORRÊNCIA — 2ª+ parcelas</td></tr>${rowsPessoalRec}` : ''}
-        ${!producao.length && !recorrencia.length ? `<tr><td colspan="5" class="td-center" style="padding:30px;color:var(--text3)">Sem vendas próprias neste mês</td></tr>` : ''}
-      </tbody>
-    </table>
-  </div>
-</div>
-
-<div class="card">
-  <div class="card-header"><span class="card-title">Override — produção da equipe</span></div>
-  <div class="table-wrap">
-    <table>
-      <thead>${override.length ? thHTML : ''}</thead>
-      <tbody>
-        ${rowsOverride || `<tr><td colspan="5" class="td-center" style="padding:30px;color:var(--text3)">Sem override neste mês</td></tr>`}
-      </tbody>
-    </table>
-  </div>
-</div>
-
-<div class="overlay" id="m-demo-sup">
-  <div class="modal" style="width:660px">
-    <button class="modal-close no-print" onclick="closeModal('m-demo-sup')">✕</button>
-    <div class="modal-title" id="mds-title">Demonstrativo — Supervisor</div>
-    <div class="modal-sub" id="mds-sub"></div>
-    <div id="mds-body"></div>
-    <div class="modal-actions no-print">
-      <button class="btn btn-ghost" onclick="closeModal('m-demo-sup')">Fechar</button>
-      <button class="btn btn-ghost" onclick="window.print()">🖨 Imprimir</button>
-    </div>
-  </div>
-</div>`;
-}
-
-// NOVO: Demonstrativo da Comissão Supervisor — mesmo modelo do Demonstrativo Gestor,
-// mas com 3 seções: Produção pessoal, Recorrência pessoal e Override sobre a equipe.
-function verDemonstrativoSupervisor(supervisorId, mes) {
-  const supervisorInfo = DB.vendedores.find(v => v.id === supervisorId);
-  const { producao, recorrencia } = calcComissaoSupervisorPessoal(supervisorId, mes);
-  const override = calcOverrideSupervisorMes(supervisorId, mes);
-
-  const vProd = producao.reduce((a,i)=>a+i.valor,0);
-  const vRec  = recorrencia.reduce((a,i)=>a+i.valor,0);
-  const vOver = override.reduce((a,i)=>a+i.valor,0);
-  const vLiq  = vProd + vRec + vOver;
-
-  document.getElementById('mds-title').textContent = `Demonstrativo — ${supervisorInfo?.nome || 'Supervisor'}`;
-  document.getElementById('mds-sub').textContent   = `${mesLabel(mes)} · Base de cálculo para emissão da nota fiscal`;
-
-  const thHTML = `<tr style="background:var(--ink4)">
-    <th style="padding:7px 10px;font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:1.2px;text-align:left;white-space:nowrap">Cliente</th>
-    <th style="padding:7px 10px;font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:1.2px;text-align:left">Contrato</th>
-    <th style="padding:7px 10px;font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:1.2px;text-align:left">Tabela</th>
-    <th style="padding:7px 10px;font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:1.2px;text-align:center;white-space:nowrap">Parcela</th>
-    <th style="padding:7px 10px;font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:1.2px;text-align:left">Vendedor</th>
-    <th style="padding:7px 10px;font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:1.2px;text-align:right;white-space:nowrap">Valor venda</th>
-    <th style="padding:7px 10px;font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:1.2px;text-align:right">Comissão</th>
-    <th style="padding:7px 10px;font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:1.2px;text-align:right;white-space:nowrap">%</th>
-  </tr>`;
-
-  const prodRows = producao.map(p => { const venda = DB.vendas.find(x => x.contrato === p.contrato); return `<tr style="border-bottom:1px solid var(--line)">
-    <td style="padding:8px 10px;font-size:12px;font-weight:600">${p.cliente}</td>
-    <td style="padding:8px 10px;font-family:var(--mono);font-size:11px;color:var(--text2)">${p.contrato}</td>
-    <td style="padding:8px 10px;font-size:11px;color:var(--text2)">${p.tabelaNome}</td>
-    <td style="padding:8px 10px;text-align:center">
-      <span style="font-family:var(--mono);font-size:12px;font-weight:700;color:var(--green);background:var(--green-dim);border:1px solid var(--green-glow);border-radius:5px;padding:2px 8px;white-space:nowrap">1ª</span>
-    </td>
-    <td style="padding:8px 10px;font-size:11px;color:var(--text2)">${supervisorInfo?.nome.split(' ')[0] || '—'}</td>
-    <td style="padding:8px 10px;font-family:var(--mono);font-size:12px;color:var(--text2);text-align:right">${venda ? fmt(venda.valor) : '—'}</td>
-    <td style="padding:8px 10px;font-family:var(--mono);font-size:13px;font-weight:700;color:var(--green);text-align:right">${fmt(p.valor)}</td>
-    <td style="padding:8px 10px;font-family:var(--mono);font-size:11px;color:var(--text3);text-align:right">${p.pct}%</td>
-  </tr>`; }).join('');
-
-  const recRows = recorrencia.map(p => { const venda = DB.vendas.find(x => x.contrato === p.contrato); return `<tr style="border-bottom:1px solid var(--line)">
-    <td style="padding:8px 10px;font-size:12px;font-weight:600">${p.cliente}</td>
-    <td style="padding:8px 10px;font-family:var(--mono);font-size:11px;color:var(--text2)">${p.contrato}</td>
-    <td style="padding:8px 10px;font-size:11px;color:var(--text2)">${p.tabelaNome}</td>
-    <td style="padding:8px 10px;text-align:center">
-      <span style="font-family:var(--mono);font-size:12px;font-weight:700;color:var(--blue);background:var(--blue-dim);border:1px solid var(--blue-glow);border-radius:5px;padding:2px 8px;white-space:nowrap">${p.parc}ª</span>
-    </td>
-    <td style="padding:8px 10px;font-size:11px;color:var(--text2)">${supervisorInfo?.nome.split(' ')[0] || '—'}</td>
-    <td style="padding:8px 10px;font-family:var(--mono);font-size:12px;color:var(--text2);text-align:right">${venda ? fmt(venda.valor) : '—'}</td>
-    <td style="padding:8px 10px;font-family:var(--mono);font-size:13px;font-weight:700;color:var(--blue);text-align:right">${fmt(p.valor)}</td>
-    <td style="padding:8px 10px;font-family:var(--mono);font-size:11px;color:var(--text3);text-align:right">${p.pct}%</td>
-  </tr>`; }).join('');
-
-  const overRows = override.map(p => { const venda = DB.vendas.find(x => x.contrato === p.contrato); return `<tr style="border-bottom:1px solid var(--line)">
-    <td style="padding:8px 10px;font-size:12px;font-weight:600">${p.cliente}</td>
-    <td style="padding:8px 10px;font-family:var(--mono);font-size:11px;color:var(--text2)">${p.contrato}</td>
-    <td style="padding:8px 10px;font-size:11px;color:var(--text2)">${p.tabela}</td>
-    <td style="padding:8px 10px;text-align:center">
-      <span style="font-family:var(--mono);font-size:12px;font-weight:700;color:var(--purple);background:var(--purple-dim);border:1px solid var(--purple-glow);border-radius:5px;padding:2px 8px;white-space:nowrap">${p.n}ª</span>
-    </td>
-    <td style="padding:8px 10px;font-size:11px;color:var(--text2)">${vendorName(p.vendedor).split(' ')[0]}</td>
-    <td style="padding:8px 10px;font-family:var(--mono);font-size:12px;color:var(--text2);text-align:right">${venda ? fmt(venda.valor) : '—'}</td>
-    <td style="padding:8px 10px;font-family:var(--mono);font-size:13px;font-weight:700;color:var(--purple);text-align:right">${fmt(p.valor)}</td>
-    <td style="padding:8px 10px;font-family:var(--mono);font-size:11px;color:var(--text3);text-align:right">${p.pct}%</td>
-  </tr>`; }).join('');
-
-  function subtotalRow(label, valor, cor) {
-    return `<tr style="background:var(--ink4)">
-      <td colspan="7" style="padding:8px 10px;font-size:11px;font-weight:700;color:${cor};text-transform:uppercase;letter-spacing:1px">${label}</td>
-      <td style="padding:8px 10px;font-family:var(--mono);font-size:13px;font-weight:700;color:${cor};text-align:right">${valor}</td>
-    </tr>`;
-  }
-
-  const totalLinhas = producao.length + recorrencia.length + override.length;
-  document.getElementById('mds-body').classList.toggle('compact-print', totalLinhas > 10);
-
-  // CORRIGIDO: a 1ª parcela é sempre paga no mês SEGUINTE à venda — o
-  // demonstrativo de um mês mostra produção do mês ANTERIOR
-  const mesProducao = addMonths(mes + '-01', -1)?.substring(0, 7);
-  const equipeDemo = equipeDoSupervisor(supervisorId);
-  const volumeTotal = DB.vendas
-    .filter(v => (v.vendedor === supervisorId || equipeDemo.includes(v.vendedor)) && v.status !== 'cancelado' && mesKey(v.dvenda) === mesProducao)
-    .reduce((a, v) => a + v.valor, 0);
-
-  // NOVO: chips de quais tabelas são PRIME vs BÁSICA
-  // Cores fixas (não usam var(--green)/var(--amber) porque no tema do WCON
-  // essas duas variáveis são mapeadas pro MESMO cinza neutro — ficariam iguais)
-  const corPrime  = { bg:'#EAF3DE', bgGlow:'#C0DD97', texto:'#27500A' };
-  const corBasica = { bg:'#FAEEDA', bgGlow:'#FAC775', texto:'#7A4A0A' };
-
-  const regras = DB.regrasOverrideSupervisor || { tabelasRuins: [], boa: [0,0,0], ruim: [0,0,0] };
-  const chipsPrime = (DB.tabelasSupervisor || [])
-    .filter(t => !regras.tabelasRuins.includes(t.id))
-    .map(t => `<span style="font-size:10px;font-family:var(--mono);background:${corPrime.bg};color:${corPrime.texto};padding:3px 8px;border-radius:4px">${t.id}</span>`)
-    .join('');
-  const chipsBasica = regras.tabelasRuins
-    .map(id => `<span style="font-size:10px;font-family:var(--mono);background:${corBasica.bg};color:${corBasica.texto};padding:3px 8px;border-radius:4px">${id}</span>`)
-    .join('');
-
-  document.getElementById('mds-body').innerHTML = `
-  <div style="margin-bottom:16px">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:14px 16px;background:var(--ink3);border-radius:10px;border:1px solid var(--line);margin-bottom:14px">
-      <div style="font-size:11px;color:var(--text3);font-family:var(--mono);line-height:1.8">
-        WCON System · Mundo do Consórcio<br>
-        CNPJ: 00.000.000/0001-00<br>
-        Emissão: ${fmtDate(today())}
-      </div>
-      <div style="text-align:right">
-        <div style="font-size:18px;font-weight:800;color:var(--brand);letter-spacing:-0.5px">DEMONSTRATIVO SUPERVISOR</div>
-        <div style="font-size:12px;color:var(--text2);font-family:var(--mono);margin-top:2px">${mesLabel(mes)} · ${supervisorInfo?.nome || ''}</div>
-      </div>
-    </div>
-
-    <div class="demo-resumo-print">
-    <div style="background:var(--ink2);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px">
-      <div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:12px">Como funciona o comissionamento</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
-        <div style="background:${corPrime.bg};border:1px solid ${corPrime.bgGlow};border-radius:8px;padding:12px">
-          <div style="font-size:11px;font-weight:700;color:${corPrime.texto}">TABELAS PRIME</div>
-          <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:${corPrime.texto};margin:4px 0 6px">${regras.boa.reduce((a,b)=>a+b,0).toFixed(2)}%</div>
-          <div style="font-size:11px;color:${corPrime.texto};font-family:var(--mono)">${regras.boa.map(p=>p+'%').join(' · ')}</div>
-          <div style="font-size:9px;color:${corPrime.texto};opacity:.75;margin-top:4px">1ª / 2ª / 3ª parcela do cliente</div>
-        </div>
-        <div style="background:${corBasica.bg};border:1px solid ${corBasica.bgGlow};border-radius:8px;padding:12px">
-          <div style="font-size:11px;font-weight:700;color:${corBasica.texto}">TABELA BÁSICA</div>
-          <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:${corBasica.texto};margin:4px 0 6px">${regras.ruim.reduce((a,b)=>a+b,0).toFixed(2)}%</div>
-          <div style="font-size:11px;color:${corBasica.texto};font-family:var(--mono)">${regras.ruim.map(p=>p+'%').join(' · ')}</div>
-          <div style="font-size:9px;color:${corBasica.texto};opacity:.75;margin-top:4px">1ª / 2ª / 3ª parcela do cliente</div>
-        </div>
-      </div>
-      <div style="border-top:1px solid var(--line);padding-top:10px">
-        <div style="font-size:9px;font-weight:700;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">Tabelas por modelo</div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">${chipsPrime}</div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">${chipsBasica}</div>
-      </div>
-    </div>
-
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;background:var(--ink3);border-radius:10px;border:1px solid var(--line);margin-bottom:14px">
-      <div>
-        <div style="font-size:10px;font-weight:700;color:var(--text2);letter-spacing:1.5px;text-transform:uppercase">Volume total produzido</div>
-        <div style="font-size:10px;color:var(--text3);margin-top:2px">Vendas próprias + equipe em ${mesLabel(mesProducao)} · gera a comissão paga em ${mesLabel(mes)}</div>
-      </div>
-      <div style="font-size:22px;font-weight:800;font-family:var(--mono);color:var(--text)">${fmt(volumeTotal)}</div>
-    </div>
-    </div>
-
-    <div style="border:1px solid var(--line);border-radius:10px;overflow:hidden">
-      <div style="overflow-x:auto">
-        <table style="width:100%;border-collapse:collapse">
-
-          ${producao.length > 0 ? `
-          <thead>
-            <tr style="background:var(--green-dim)">
-              <td colspan="8" style="padding:7px 12px;font-size:10px;font-weight:700;color:var(--green);letter-spacing:1.5px;text-transform:uppercase">
-                COMISSÃO PESSOAL — PRODUÇÃO · ${producao.length} contrato(s)
-              </td>
-            </tr>
-            ${thHTML}
-          </thead>
-          <tbody>
-            ${prodRows}
-            ${subtotalRow('Subtotal produção pessoal', fmt(vProd), 'var(--green)')}
-          </tbody>` : ''}
-
-          ${recorrencia.length > 0 ? `
-          <thead>
-            <tr style="background:var(--blue-dim)">
-              <td colspan="8" style="padding:7px 12px;font-size:10px;font-weight:700;color:var(--blue);letter-spacing:1.5px;text-transform:uppercase;border-top:2px solid var(--line)">
-                COMISSÃO PESSOAL — RECORRÊNCIA · ${recorrencia.length} contrato(s)
-              </td>
-            </tr>
-            ${thHTML}
-          </thead>
-          <tbody>
-            ${recRows}
-            ${subtotalRow('Subtotal recorrência pessoal', fmt(vRec), 'var(--blue)')}
-          </tbody>` : ''}
-
-          ${override.length > 0 ? `
-          <thead>
-            <tr style="background:var(--purple-dim)">
-              <td colspan="8" style="padding:7px 12px;font-size:10px;font-weight:700;color:var(--purple);letter-spacing:1.5px;text-transform:uppercase;border-top:2px solid var(--line)">
-                OVERRIDE — PRODUÇÃO DA EQUIPE · ${override.length} parcela(s)
-              </td>
-            </tr>
-            ${thHTML}
-          </thead>
-          <tbody>
-            ${overRows}
-            ${subtotalRow('Subtotal override', fmt(vOver), 'var(--purple)')}
-          </tbody>` : ''}
-
-          ${totalLinhas === 0 ? `<tbody><tr><td colspan="8" class="td-center" style="padding:30px;color:var(--text3)">Sem valores neste mês</td></tr></tbody>` : ''}
-
-          <tbody>
-            <tr style="background:var(--ink3);border-top:2px solid var(--line2)">
-              <td colspan="7" style="padding:10px 12px;font-size:13px;font-weight:700;color:var(--text)">Total bruto</td>
-              <td style="padding:10px 12px;font-family:var(--mono);font-size:14px;font-weight:700;color:var(--text);text-align:right">${fmt(vLiq)}</td>
-            </tr>
-          </tbody>
-
-        </table>
-      </div>
-
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:16px;background:var(--brand-dim);border-top:2px solid var(--brand-border)">
-        <div>
-          <div style="font-size:11px;font-weight:700;color:var(--brand);letter-spacing:1.5px;text-transform:uppercase">VALOR LÍQUIDO PARA NF</div>
-          <div style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:2px">Base de cálculo para emissão da nota fiscal</div>
-        </div>
-        <div style="font-size:24px;font-weight:800;font-family:var(--mono);color:var(--brand)">${fmt(vLiq)}</div>
-      </div>
-    </div>
-  </div>`;
-
-  openModal('m-demo-sup');
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
