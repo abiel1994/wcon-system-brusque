@@ -268,6 +268,7 @@ const AppState = {
     trabalho:      { vendId: null, filterSit: 'all' },
     funil:         { filtroVend: null, mesSel: null },
     agendaFunil:   { mesCalendario: null, diaSelecionado: null },
+    leadsPainel:   { mesSel: null },
     clientes:      { search: '' },
     vendedores:    {},
     dashboard:     { rankPeriodo: 'total' },
@@ -591,6 +592,7 @@ const Router = {
     funil:         { label: 'Funil de Atendimento', icon: '', section: 'comercial', render: renderFunil },
     painelExecutivo: { label: 'Painel Executivo', icon: '', section: 'gestor', render: renderPainelExecutivoFunil },
     agendaFunil:   { label: 'Agenda', icon: '', section: 'comercial', render: renderAgendaFunil },
+    leadsPainel:   { label: 'Leads', icon: '', section: 'gestor', render: renderLeadsPainelFunil },
     remuneracao:   { label: 'Comissão WCON', icon: '★', section: 'gestor', render: renderRemuneracao },
 
     tabelas:       { label: 'Tabelas',       icon: '≡', section: 'configuracao', render: renderTabelas },
@@ -1127,7 +1129,7 @@ function buildSidebar() {
   };
 
   const visibles = isG
-    ? ['dashboard','vendedores','clientes','relatorio','comissao','inadimplencia','estornos','trabalho','funil','agendaFunil','painelExecutivo','remuneracao','tabelas','configuracoes']
+    ? ['dashboard','vendedores','clientes','relatorio','comissao','inadimplencia','estornos','trabalho','funil','agendaFunil','painelExecutivo','leadsPainel','remuneracao','tabelas','configuracoes']
     : ['dashboard','relatorio','comissao','inadimplencia','estornos','trabalho','funil','agendaFunil','tabelas'];
 
   const badges = {
@@ -6232,6 +6234,68 @@ function abrirDiaAgendaFunil(dataStr) {
     </div>`}
   `;
   openModal('m-agenda-dia');
+}
+
+function renderLeadsPainelFunil() {
+  const st = AppState.modulo.leadsPainel;
+  if (!st.mesSel) st.mesSel = todayMes();
+  const mesesDisp = Array.from(new Set([...DB.leadsFunil.map(l => (l.criadoEm||'').substring(0,7)).filter(Boolean), st.mesSel])).sort();
+  const mesNav = renderMesNav(mesesDisp, st.mesSel, "AppState.modulo.leadsPainel.mesSel", 'leadsPainel');
+
+  const leadsDoMes = DB.leadsFunil.filter(l => (l.criadoEm||'').substring(0,7) === st.mesSel);
+  const recebidos     = leadsDoMes.length;
+  const trabalhados   = leadsDoMes.filter(l => l.etapa !== 'lead').length;
+  const convertidos   = leadsDoMes.filter(l => l.etapa === 'venda').length;
+  const perdidos       = leadsDoMes.filter(l => l.etapa === 'desqualificado').length;
+  const semResposta    = leadsDoMes.filter(l => l.etapa === 'contato' && (l.tentativas||0) >= 6).length;
+  const followup       = leadsDoMes.filter(l => l.etapa === 'followup').length;
+  const redistribuidos = leadsDoMes.filter(l => (l.vezesRedistribuido||0) > 0).length;
+  const leadsPago      = leadsDoMes.filter(l => l.origem === 'pago').length;
+  const leadsLigacao   = leadsDoMes.filter(l => l.origem === 'ligacao').length;
+
+  const cards = [
+    ['Recebidos', recebidos, 'var(--text)'],
+    ['Trabalhados', trabalhados, 'var(--text)'],
+    ['Convertidos', convertidos, 'var(--green)'],
+    ['Perdidos/Descartados', perdidos, 'var(--brand)'],
+    ['Sem resposta (6+ tent.)', semResposta, 'var(--amber)'],
+    ['Follow-up', followup, 'var(--text)'],
+    ['Redistribuídos', redistribuidos, 'var(--amber)'],
+  ];
+
+  return `
+<div class="page-header">
+  <div>
+    <div class="page-title">Indicadores de Leads</div>
+    <div class="page-sub">// equipe toda · ${mesLabel(st.mesSel)}</div>
+  </div>
+</div>
+
+${mesNav}
+
+<div class="stats-grid">
+  ${cards.map(([label,valor,cor]) => `<div class="stat-card">
+    <div class="stat-label">${label}</div>
+    <div class="stat-value" style="color:${cor}">${valor}</div>
+  </div>`).join('')}
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <div class="form-divider">Origem do lead</div>
+    <div style="display:flex;gap:10px">
+      <div style="flex:1;background:#E6F1FB;border-radius:6px;padding:10px;text-align:center">
+        <div style="font-size:16px;font-weight:600;font-family:var(--mono);color:#0C447C">${leadsPago}</div>
+        <div style="font-size:10px;color:#0C447C">Tráfego pago</div>
+      </div>
+      <div style="flex:1;background:var(--ink3);border-radius:6px;padding:10px;text-align:center">
+        <div style="font-size:16px;font-weight:600;font-family:var(--mono);color:var(--text2)">${leadsLigacao}</div>
+        <div style="font-size:10px;color:var(--text2)">Gerados por nós (ligação)</div>
+      </div>
+    </div>
+  </div>
+</div>
+`;
 }
 
 function renderModaisFunil() {
