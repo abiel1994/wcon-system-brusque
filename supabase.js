@@ -246,6 +246,74 @@ const Servicos = {
       return data;
     }
   },
+
+  /* ── FUNIL DE ATENDIMENTO ──────────────────────────────────────────────── */
+  async listarLeadsFunil() {
+    const { data, error } = await sb.from('leads_funil').select('*').order('criado_em_ts', { ascending: false });
+    if (error) { console.error('Erro leads_funil:', error); return []; }
+    return data;
+  },
+
+  async criarLeadFunil(lead) {
+    const { data, error } = await sb.from('leads_funil').insert(lead).select().single();
+    if (error) { console.error('Erro criar lead:', error); return null; }
+    return data;
+  },
+
+  async atualizarLeadFunil(id, campos) {
+    const { data, error } = await sb.from('leads_funil').update(campos).eq('id', id).select().single();
+    if (error) { console.error('Erro atualizar lead:', error); return null; }
+    return data;
+  },
+
+  async getRodizio() {
+    const { data, error } = await sb.from('funil_rodizio').select('*').eq('id', 1).single();
+    if (error) { console.warn('funil_rodizio não encontrada:', error.message); return { ultimo_indice: -1 }; }
+    return data;
+  },
+
+  async atualizarRodizio(ultimoIndice) {
+    const { error } = await sb.from('funil_rodizio').update({ ultimo_indice: ultimoIndice }).eq('id', 1);
+    if (error) console.error('Erro atualizar rodízio:', error);
+  },
+
+  async listarLigacoesFunil() {
+    const { data, error } = await sb.from('funil_ligacoes').select('*');
+    if (error) { console.warn('funil_ligacoes não encontrada:', error.message); return []; }
+    return data;
+  },
+
+  async registrarLigacao(vendedorId, data, incremento) {
+    const { data: existente } = await sb.from('funil_ligacoes').select('*').eq('vendedor_id', vendedorId).eq('data', data).maybeSingle();
+    if (existente) {
+      const { error } = await sb.from('funil_ligacoes').update({ quantidade: existente.quantidade + incremento }).eq('id', existente.id);
+      if (error) console.error('Erro atualizar ligações:', error);
+    } else {
+      const { error } = await sb.from('funil_ligacoes').insert({ vendedor_id: vendedorId, data, quantidade: incremento });
+      if (error) console.error('Erro criar registro de ligações:', error);
+    }
+  },
+
+  async listarIAFunil() {
+    const { data, error } = await sb.from('funil_ia').select('*');
+    if (error) { console.warn('funil_ia não encontrada:', error.message); return []; }
+    return data;
+  },
+
+  async registrarIA(data, contatos, respostas, reunioes) {
+    const { data: existente } = await sb.from('funil_ia').select('*').eq('data', data).maybeSingle();
+    if (existente) {
+      const { error } = await sb.from('funil_ia').update({
+        contatos: existente.contatos + contatos,
+        respostas: existente.respostas + respostas,
+        reunioes: existente.reunioes + reunioes,
+      }).eq('id', existente.id);
+      if (error) console.error('Erro atualizar IA:', error);
+    } else {
+      const { error } = await sb.from('funil_ia').insert({ data, contatos, respostas, reunioes });
+      if (error) console.error('Erro criar registro de IA:', error);
+    }
+  },
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -254,7 +322,7 @@ const Servicos = {
 async function carregarDadosIniciais() {
   mostrarCarregando(true);
   try {
-    const [vendedores, clientes, tabelas, tabelasComissaoGerencia, vendas, fechGestor, fechVendedores, acessoTabelas] = await Promise.all([
+    const [vendedores, clientes, tabelas, tabelasComissaoGerencia, vendas, fechGestor, fechVendedores, acessoTabelas, leadsFunil, rodizio, ligacoesFunil, iaFunil] = await Promise.all([
       Servicos.listarVendedores(),
       Servicos.listarClientes(),
       Servicos.listarTabelas(),
@@ -263,6 +331,10 @@ async function carregarDadosIniciais() {
       Servicos.listarFechamentosGestor(),
       Servicos.listarFechamentos(),
       Servicos.listarAcessoTabelas(),
+      Servicos.listarLeadsFunil(),
+      Servicos.getRodizio(),
+      Servicos.listarLigacoesFunil(),
+      Servicos.listarIAFunil(),
     ]);
 
     // ── Vendedores ──────────────────────────────────────────────────────────
@@ -405,7 +477,42 @@ async function carregarDadosIniciais() {
       DB.acessoTabelas[a.vendedor_id].push(a.tabela_id);
     });
 
-    console.log(`✅ Supabase carregado — ${DB.vendedores.length} vendedores · ${DB.clientes.length} clientes · ${DB.vendas.length} vendas`);
+    // ── Funil de Atendimento ──────────────────────────────────────────────
+    DB.leadsFunil = leadsFunil.map(l => ({
+      id: l.id, nome: l.nome, email: l.email || '', celular: l.celular || '',
+      interesse: l.interesse || [], valorCredito: parseFloat(l.valor_credito || 0),
+      rendaFamiliar: parseFloat(l.renda_familiar || 0), decideCompra: l.decide_compra || '',
+      parcelaIdeal: parseFloat(l.parcela_ideal || 0), recursoProprio: parseFloat(l.recurso_proprio || 0),
+      pagaAluguel: l.paga_aluguel || 'nao', pagaAluguelValor: parseFloat(l.paga_aluguel_valor || 0),
+      fgts: l.fgts || 'nao', fgtsValor: parseFloat(l.fgts_valor || 0),
+      cidade: l.cidade || '', origemProspeccao: l.origem_prospeccao || '', profissao: l.profissao || '',
+      observacoes: l.observacoes || '',
+      origem: l.origem, vendedor: l.vendedor_id, vendedorAnterior: l.vendedor_anterior_id || null,
+      etapa: l.etapa, perfil: l.perfil, motivoPerdido: l.motivo_perdido || null,
+      tentativas: l.tentativas || 0, valorVenda: parseFloat(l.valor_venda || 0),
+      vezesRedistribuido: l.vezes_redistribuido || 0, autoRedistribuidoEm: l.auto_redistribuido_em,
+      dataReuniao1: l.data_reuniao1, horaReuniao1: l.hora_reuniao1,
+      requerGestorReuniao1: l.requer_gestor_reuniao1, requerSupervisorReuniao1: l.requer_supervisor_reuniao1,
+      dataReuniao2: l.data_reuniao2, horaReuniao2: l.hora_reuniao2,
+      requerGestorReuniao2: l.requer_gestor_reuniao2, requerSupervisorReuniao2: l.requer_supervisor_reuniao2,
+      criadoEm: l.criado_em, criadoEmTs: l.criado_em_ts, primeiroContatoTs: l.primeiro_contato_ts,
+      historico: l.historico_etapas || [],
+    }));
+
+    DB.funilRodizio = { ultimoIndice: rodizio?.ultimo_indice ?? -1 };
+
+    DB.funilLigacoes = {};
+    ligacoesFunil.forEach(r => {
+      if (!DB.funilLigacoes[r.vendedor_id]) DB.funilLigacoes[r.vendedor_id] = {};
+      DB.funilLigacoes[r.vendedor_id][String(r.data).substring(0,10)] = r.quantidade;
+    });
+
+    DB.funilIA = {};
+    iaFunil.forEach(r => {
+      DB.funilIA[String(r.data).substring(0,10)] = { contatos: r.contatos, respostas: r.respostas, reunioes: r.reunioes };
+    });
+
+    console.log(`✅ Supabase carregado — ${DB.vendedores.length} vendedores · ${DB.clientes.length} clientes · ${DB.vendas.length} vendas · ${DB.leadsFunil.length} leads`);
     if (DB.vendas.length > 0) {
       console.log('📅 Exemplo dvenda:', DB.vendas[0].dvenda, '| d2parc:', DB.vendas[0].d2parc);
     }
