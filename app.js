@@ -582,13 +582,13 @@ function vendedoresNoEscopo(u) {
 const Router = {
   modules: {
     dashboard:     { label: 'Dashboard',     icon: '◈', section: 'visao', render: renderDashboard },
+    trabalho:      { label: 'Relatório de Trabalho', icon: '', section: 'visao', render: renderRelatorioTrabalho },
     vendedores:    { label: 'Vendedores',    icon: '◇', section: 'cadastro', render: renderVendedores },
     clientes:      { label: 'Clientes',      icon: '○', section: 'cadastro', render: renderClientes },
 
     funil:         { label: 'Funil de Atendimento', icon: '', section: 'comercial', render: renderFunil },
     agendaFunil:   { label: 'Agenda', icon: '', section: 'comercial', render: renderAgendaFunil },
     relatorio:     { label: 'Relatórios',    icon: '▦', section: 'comercial', render: renderRelatorio },
-    trabalho:      { label: 'Relatório de Trabalho', icon: '', section: 'comercial', render: renderRelatorioTrabalho },
 
     comissao:      { label: 'Comissões',     icon: '◆', section: 'financeiro', render: renderComissao },
     remuneracao:   { label: 'Comissão WCON', icon: '★', section: 'financeiro', render: renderRemuneracao },
@@ -1133,8 +1133,8 @@ function buildSidebar() {
   };
 
   const visibles = isG
-    ? ['dashboard','vendedores','clientes','funil','agendaFunil','relatorio','trabalho','comissao','remuneracao','inadimplencia','estornos','painelExecutivo','leadsPainel','tabelas','configuracoes']
-    : ['dashboard','funil','agendaFunil','relatorio','trabalho','comissao','inadimplencia','estornos','tabelas'];
+    ? ['dashboard','trabalho','vendedores','clientes','funil','agendaFunil','relatorio','comissao','remuneracao','inadimplencia','estornos','painelExecutivo','leadsPainel','tabelas','configuracoes']
+    : ['dashboard','trabalho','funil','agendaFunil','relatorio','comissao','inadimplencia','estornos','tabelas'];
 
   const badges = {
     inadimplencia: DB.vendas.filter(v => v.status === 'inadimplente' && (isG ? true : vendasNoEscopo(u).some(x=>x.id===v.id))).length,
