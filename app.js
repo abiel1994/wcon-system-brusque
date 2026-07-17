@@ -8,6 +8,32 @@
 'use strict';
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   0. CONFIG POR UNIDADE — únicas linhas que devem mudar entre Cuiabá/BSF/
+   Brusque/Blumenau. Esse app.js é o MESMO arquivo pra todas as unidades —
+   o que muda de negócio entre elas fica só aqui.
+   ═══════════════════════════════════════════════════════════════════════════ */
+const CONFIG = {
+  // Cuiabá tem o role "Supervisor" (Angélica: comissão pessoal fixa +
+  // override Prime/Básica). Brusque/Blumenau têm um modelo de gerência
+  // diferente (por produto, com/sem supervisor) — desliga a aba/telas
+  // inteiras de Supervisor quando não se aplica.
+  habilitarSupervisorFeature: false, // true em Cuiabá
+
+  // Tabelas sem direito a estorno em caso de cancelamento
+  semEstorno: ['APE', 'TP', 'TEP'], // Cuiabá: ['APE']
+
+  // Tabelas com acompanhamento de inadimplência só até a 6ª parcela
+  // (padrão é até a 10ª). Brusque não informou nenhuma até agora.
+  acomp6: [], // Cuiabá: ['ETA','MB']
+
+  // Modelo de cálculo do estorno:
+  // 'faixaVenda'                 → % do valor da venda, por faixa de parcela cancelada (Cuiabá/BSF)
+  // 'percentualComissaoRecebida' → % fixo sobre a comissão JÁ RECEBIDA até o cancelamento (Brusque)
+  modeloEstorno: 'percentualComissaoRecebida', // Cuiabá: 'faixaVenda'
+  percentualEstornoRecebida: 25, // só usado se modeloEstorno for o de cima — pode mudar no futuro
+};
+
+/* ═══════════════════════════════════════════════════════════════════════════
    1. DATA LAYER — Fonte única de verdade (substituível por API/Supabase)
    ═══════════════════════════════════════════════════════════════════════════ */
 const DB = {
@@ -56,8 +82,8 @@ const DB = {
   nextFechGestorId: 1,
 
   /* ── Regras de estorno ─────────────────────────────────────────────────── */
-  semEstorno: ['APE'],
-  acomp6: ['ETA','MB'],
+  semEstorno: CONFIG.semEstorno,
+  acomp6: CONFIG.acomp6,
   estornoFaixas: [
     { de:1, ate:5, pct:0.25, maxParc:2 },
     { de:6, ate:9, pct:0.75, maxParc:3 },
@@ -462,13 +488,34 @@ function parcCancelamento(venda) {
   const idx = venda.parcelas.findIndex(p => p.s === 'cancelado');
   return idx >= 0 ? idx + 1 : null;
 }
+// NOVO: soma quanto de comissão já foi efetivamente paga pra essa venda
+// (só as parcelas marcadas como 'pago') — base do modelo "percentualComissaoRecebida"
+function totalComissaoRecebida(venda) {
+  const parcs = calcParcelas(venda);
+  let total = 0;
+  parcs.forEach((p, i) => {
+    if (venda.parcelas[i]?.s === 'pago') total += p.valor;
+  });
+  return total;
+}
+
 function calcEstorno(venda) {
   if (!temEstorno(venda.tabela)) return null;
+
+  // NOVO: modelo Brusque — % fixo sobre a comissão já recebida até o cancelamento
+  if (CONFIG.modeloEstorno === 'percentualComissaoRecebida') {
+    const recebido = totalComissaoRecebida(venda);
+    if (recebido <= 0) return null;
+    const pct = CONFIG.percentualEstornoRecebida;
+    return { valor: recebido * pct / 100, pct, faixa: null, maxParc: 1, parcCancelamento: null, baseCalculo: 'comissao_recebida' };
+  }
+
+  // Modelo padrão (Cuiabá/BSF) — % do valor da venda, por faixa de parcela cancelada
   const parc = parcCancelamento(venda);
   if (!parc) return null;
   const faixa = getFaixaEstorno(parc);
   if (!faixa) return null;
-  return { valor: venda.valor * faixa.pct / 100, pct: faixa.pct, faixa: `${faixa.de}ª–${faixa.ate}ª`, maxParc: faixa.maxParc, parcCancelamento: parc };
+  return { valor: venda.valor * faixa.pct / 100, pct: faixa.pct, faixa: `${faixa.de}ª–${faixa.ate}ª`, maxParc: faixa.maxParc, parcCancelamento: parc, baseCalculo: 'valor_venda' };
 }
 function situacao(venda) {
   if (venda.status === 'concluido')    return 'concluido';
@@ -1169,11 +1216,15 @@ function buildSidebar() {
   };
 
   // NOVO: gestor também vê a aba Comissão Supervisor (pra acompanhar a Angélica)
-  const visibles = isG
+  // — só quando a unidade usa esse modelo (CONFIG.habilitarSupervisorFeature)
+  let visibles = isG
     ? ['dashboard','vendedores','clientes','relatorio','comissao','inadimplencia','estornos','trabalho','remuneracao','comissaoSupervisor','tabelas','configuracoes']
     : isSup
       ? ['dashboard','relatorio','comissao','comissaoSupervisor','inadimplencia','estornos','trabalho','tabelas']
       : ['dashboard','relatorio','comissao','inadimplencia','estornos','trabalho','tabelas'];
+  if (!CONFIG.habilitarSupervisorFeature) {
+    visibles = visibles.filter(v => v !== 'comissaoSupervisor');
+  }
 
   const badges = {
     inadimplencia: DB.vendas.filter(v => v.status === 'inadimplente' && (isG ? true : vendasNoEscopo(u).some(x=>x.id===v.id))).length,
@@ -4742,7 +4793,7 @@ function renderTabelas() {
   ${isGestorPuro ? `<div class="page-actions"><button class="btn btn-primary btn-sm" onclick="abrirNovaTabela()">+ Nova tabela</button></div>` : ''}
 </div>
 
-${isG ? `
+${isG && CONFIG.habilitarSupervisorFeature ? `
 <div class="card" style="margin-bottom:24px;border:1px solid var(--purple);border-top:2px solid var(--purple)">
   <div class="card-header" style="background:var(--purple-dim)">
     <span class="card-title">⭐ Tabela Supervisor <span class="chip" style="margin-left:6px">role: supervisor</span></span>
