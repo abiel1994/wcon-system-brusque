@@ -267,6 +267,7 @@ const AppState = {
     tabelas:       { expandida: null, filterRef: 'all' },
     trabalho:      { vendId: null, filterSit: 'all' },
     funil:         { filtroVend: null, mesSel: null },
+    agendaFunil:   { mesCalendario: null, diaSelecionado: null },
     clientes:      { search: '' },
     vendedores:    {},
     dashboard:     { rankPeriodo: 'total' },
@@ -589,6 +590,7 @@ const Router = {
     trabalho:      { label: 'Relatório de Trabalho', icon: '', section: 'comercial', render: renderRelatorioTrabalho },
     funil:         { label: 'Funil de Atendimento', icon: '', section: 'comercial', render: renderFunil },
     painelExecutivo: { label: 'Painel Executivo', icon: '', section: 'gestor', render: renderPainelExecutivoFunil },
+    agendaFunil:   { label: 'Agenda', icon: '', section: 'comercial', render: renderAgendaFunil },
     remuneracao:   { label: 'Comissão WCON', icon: '★', section: 'gestor', render: renderRemuneracao },
 
     tabelas:       { label: 'Tabelas',       icon: '≡', section: 'configuracao', render: renderTabelas },
@@ -1125,8 +1127,8 @@ function buildSidebar() {
   };
 
   const visibles = isG
-    ? ['dashboard','vendedores','clientes','relatorio','comissao','inadimplencia','estornos','trabalho','funil','painelExecutivo','remuneracao','tabelas','configuracoes']
-    : ['dashboard','relatorio','comissao','inadimplencia','estornos','trabalho','funil','tabelas'];
+    ? ['dashboard','vendedores','clientes','relatorio','comissao','inadimplencia','estornos','trabalho','funil','agendaFunil','painelExecutivo','remuneracao','tabelas','configuracoes']
+    : ['dashboard','relatorio','comissao','inadimplencia','estornos','trabalho','funil','agendaFunil','tabelas'];
 
   const badges = {
     inadimplencia: DB.vendas.filter(v => v.status === 'inadimplente' && (isG ? true : vendasNoEscopo(u).some(x=>x.id===v.id))).length,
@@ -6114,6 +6116,124 @@ ${leadsParados3dias.length > 0 ? `
 `;
 }
 
+function agendaOrdenadaFunil() {
+  const lista = [];
+  DB.leadsFunil.forEach(l => {
+    const vend = DB.vendedores.find(v => v.id === l.vendedor);
+    if (l.dataReuniao1) lista.push({ leadId: l.id, tipo: '1ª Reunião', nome: l.nome, vendedor: vend?.nome || '—', data: l.dataReuniao1, hora: l.horaReuniao1 || '--:--', requerGestor: !!l.requerGestorReuniao1, requerSupervisor: !!l.requerSupervisorReuniao1 });
+    if (l.dataReuniao2) lista.push({ leadId: l.id, tipo: '2ª Reunião', nome: l.nome, vendedor: vend?.nome || '—', data: l.dataReuniao2, hora: l.horaReuniao2 || '--:--', requerGestor: !!l.requerGestorReuniao2, requerSupervisor: !!l.requerSupervisorReuniao2 });
+  });
+  lista.sort((a,b) => (a.data+a.hora).localeCompare(b.data+b.hora));
+  return lista;
+}
+
+function montarGridCalendarioFunil(mesKeyCal) {
+  const [ano, mes] = mesKeyCal.split('-').map(Number);
+  const primeiroDia = new Date(ano, mes-1, 1);
+  const offsetInicial = primeiroDia.getDay();
+  const diasNoMes = new Date(ano, mes, 0).getDate();
+  const celulas = [];
+  for (let i=0; i<offsetInicial; i++) celulas.push(null);
+  for (let d=1; d<=diasNoMes; d++) celulas.push(`${ano}-${String(mes).padStart(2,'0')}-${String(d).padStart(2,'0')}`);
+  while (celulas.length % 7 !== 0) celulas.push(null);
+  return celulas;
+}
+
+function renderAgendaFunil() {
+  const st = AppState.modulo.agendaFunil;
+  if (!st.mesCalendario) st.mesCalendario = todayMes();
+  const eventos = agendaOrdenadaFunil();
+  const grid = montarGridCalendarioFunil(st.mesCalendario);
+  const diasSemana = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const hojeStr = today();
+  const CORES = { '1ª Reunião': { bg:'#E6F1FB', cor:'#0C447C' }, '2ª Reunião': { bg:'#EEEDFE', cor:'#26215C' } };
+
+  const celulasHtml = grid.map(dataStr => {
+    if (!dataStr) return `<div style="background:var(--ink3);min-height:88px"></div>`;
+    const evDia = eventos.filter(e => e.data === dataStr).sort((a,b) => a.hora.localeCompare(b.hora));
+    const ehHoje = dataStr === hojeStr;
+    const diaNum = parseInt(dataStr.split('-')[2], 10);
+    return `<div onclick="abrirDiaAgendaFunil('${dataStr}')" style="background:var(--ink2);min-height:88px;padding:4px;display:flex;flex-direction:column;gap:2px;cursor:pointer">
+      <div style="font-size:10px;font-weight:${ehHoje?700:500};color:${ehHoje?'#fff':'var(--text2)'};background:${ehHoje?'var(--brand)':'transparent'};width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center">${diaNum}</div>
+      ${evDia.slice(0,3).map(ev => {
+        const cor = CORES[ev.tipo] || { bg:'var(--ink3)', cor:'var(--text2)' };
+        return `<div title="${ev.hora} · ${ev.nome} · ${ev.tipo} · ${ev.vendedor}" style="background:${cor.bg};color:${cor.cor};font-size:8.5px;padding:1px 4px;border-radius:3px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis"><strong>${ev.hora}</strong> ${ev.nome}${ev.requerGestor?' 🔒G':''}${ev.requerSupervisor?' 🔒S':''}</div>`;
+      }).join('')}
+      ${evDia.length>3 ? `<div style="font-size:8px;color:var(--text3);padding-left:2px">+${evDia.length-3} mais</div>` : ''}
+    </div>`;
+  }).join('');
+
+  return `
+<div class="page-header">
+  <div>
+    <div class="page-title">Agenda</div>
+    <div class="page-sub">// reuniões da equipe toda</div>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-ghost btn-sm btn-icon" onclick="mudarMesAgendaFunil(-1)">‹</button>
+    <span style="font-size:13px;font-weight:600;min-width:130px;text-align:center;display:inline-block">${mesLabel(st.mesCalendario)}</span>
+    <button class="btn btn-ghost btn-sm btn-icon" onclick="mudarMesAgendaFunil(1)">›</button>
+    <button class="btn btn-ghost btn-sm" onclick="AppState.modulo.agendaFunil.mesCalendario=todayMes();rerenderModule('agendaFunil')">Hoje</button>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:8px;overflow:hidden">
+      ${diasSemana.map(d => `<div style="background:var(--ink3);padding:6px;font-size:9px;font-weight:700;color:var(--text3);text-align:center;text-transform:uppercase">${d}</div>`).join('')}
+      ${celulasHtml}
+    </div>
+    <div style="display:flex;gap:14px;margin-top:12px;font-size:10px;color:var(--text3);flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:3px;background:#E6F1FB;display:inline-block"></span> 1ª Reunião</div>
+      <div style="display:flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:3px;background:#EEEDFE;display:inline-block"></span> 2ª Reunião</div>
+      <div>🔒G = precisa do Gestor · 🔒S = precisa do líder de equipe</div>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="m-agenda-dia">
+  <div class="modal" style="max-width:380px">
+    <button class="modal-close" onclick="closeModal('m-agenda-dia')">✕</button>
+    <div id="mad-conteudo"></div>
+  </div>
+</div>
+`;
+}
+
+function mudarMesAgendaFunil(delta) {
+  const st = AppState.modulo.agendaFunil;
+  const [ano, mes] = st.mesCalendario.split('-').map(Number);
+  const d = new Date(ano, mes-1+delta, 1);
+  st.mesCalendario = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  rerenderModule('agendaFunil');
+}
+
+function abrirDiaAgendaFunil(dataStr) {
+  const eventos = agendaOrdenadaFunil().filter(e => e.data === dataStr).sort((a,b) => a.hora.localeCompare(b.hora));
+  const CORES = { '1ª Reunião': { bg:'#E6F1FB', cor:'#0C447C' }, '2ª Reunião': { bg:'#EEEDFE', cor:'#26215C' } };
+  document.getElementById('mad-conteudo').innerHTML = `
+    <div style="font-size:15px;font-weight:700;margin-bottom:2px">${dataStr.split('-').reverse().join('/')}</div>
+    <div style="font-size:11px;color:var(--text3);margin-bottom:14px">${eventos.length} reunião(ões) marcada(s)</div>
+    ${eventos.length === 0 ? `<div style="text-align:center;padding:20px;color:var(--text3);font-size:12px">Nenhuma reunião nesse dia</div>` : `
+    <div style="display:flex;flex-direction:column;gap:6px">
+      ${eventos.map(ev => {
+        const cor = CORES[ev.tipo] || { bg:'var(--ink3)', cor:'var(--text2)' };
+        return `<div style="display:flex;justify-content:space-between;align-items:center;background:var(--ink3);border-radius:6px;padding:8px 10px">
+          <div>
+            <div style="font-size:13px;font-weight:600">${ev.nome}</div>
+            <div style="font-size:10px;color:var(--text3)">
+              <span style="background:${cor.bg};color:${cor.cor};padding:1px 6px;border-radius:4px;margin-right:4px">${ev.tipo}</span>
+              ${ev.vendedor}${ev.requerGestor?' 🔒Gestor':''}${ev.requerSupervisor?' 🔒Líder':''}
+            </div>
+          </div>
+          <div style="font-size:14px;font-family:var(--mono);font-weight:700">${ev.hora}</div>
+        </div>`;
+      }).join('')}
+    </div>`}
+  `;
+  openModal('m-agenda-dia');
+}
+
 function renderModaisFunil() {
   return `
 <div class="overlay" id="m-funil-novo">
@@ -6206,6 +6326,28 @@ function renderModaisFunil() {
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeModal('m-funil-venda')">Cancelar</button>
       <button class="btn btn-primary" onclick="confirmarVendaFunil()">Confirmar venda</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="m-funil-agenda">
+  <div class="modal" style="max-width:360px">
+    <div class="modal-title" id="mfa-titulo">Agendar reunião</div>
+    <div class="modal-sub">Entra na Agenda compartilhada da equipe.</div>
+    <div class="form-row cols-2">
+      <div class="form-group"><label>Data</label><input type="date" id="mfa-data" onchange="atualizarConflitoAgendaFunil()"></div>
+      <div class="form-group"><label>Hora</label><input type="time" id="mfa-hora" onchange="atualizarConflitoAgendaFunil()"></div>
+    </div>
+    <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;margin-bottom:8px">
+      <input type="checkbox" id="mfa-gestor" onchange="atualizarConflitoAgendaFunil()"> Precisa que o Gestor participe
+    </label>
+    <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;margin-bottom:14px">
+      <input type="checkbox" id="mfa-supervisor" onchange="atualizarConflitoAgendaFunil()"> Precisa que o líder de equipe participe
+    </label>
+    <div id="mfa-conflito" class="alert alert-red" style="display:none"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('m-funil-agenda')">Cancelar</button>
+      <button class="btn btn-primary" id="mfa-btn-confirmar" onclick="confirmarAgendamentoFunil()">Confirmar agendamento</button>
     </div>
   </div>
 </div>
@@ -6307,6 +6449,10 @@ async function moverEtapaFunil(leadId, novaEtapa) {
     openModal('m-funil-venda');
     return;
   }
+  if (novaEtapa === 'reuniao1' || novaEtapa === 'reuniao2') {
+    abrirModalAgendaFunil(leadId, novaEtapa);
+    return;
+  }
   if (novaEtapa === 'qualificacao') {
     const lead = DB.leadsFunil.find(l => l.id === leadId);
     abrirModalPerfilFunil(lead);
@@ -6373,6 +6519,75 @@ async function confirmarVendaFunil() {
   const historico = [...(lead.historico||[]), { etapa:'venda', data: today() }];
   await Servicos.atualizarLeadFunil(leadId, { etapa:'venda', valor_venda: valor, historico_etapas: historico });
   closeModal('m-funil-venda');
+  await carregarDadosIniciais();
+  rerenderModule('funil');
+}
+
+let _funilAgendaTarget = null; // { leadId, novaEtapa }
+
+function abrirModalAgendaFunil(leadId, novaEtapa) {
+  _funilAgendaTarget = { leadId, novaEtapa };
+  document.getElementById('mfa-titulo').textContent = 'Agendar ' + (novaEtapa === 'reuniao1' ? '1ª Reunião' : '2ª Reunião');
+  document.getElementById('mfa-data').value = today();
+  document.getElementById('mfa-hora').value = '14:00';
+  document.getElementById('mfa-gestor').checked = false;
+  document.getElementById('mfa-supervisor').checked = false;
+  atualizarConflitoAgendaFunil();
+  openModal('m-funil-agenda');
+}
+
+function checarConflitoAgendaFunil(data, hora, reqGestor, reqSupervisor, leadIdAtual) {
+  if (!data || !hora || (!reqGestor && !reqSupervisor)) return [];
+  const conflitos = [];
+  DB.leadsFunil.forEach(l => {
+    if (l.id === leadIdAtual) return;
+    if (l.dataReuniao1 === data && l.horaReuniao1 === hora && ((reqGestor && l.requerGestorReuniao1) || (reqSupervisor && l.requerSupervisorReuniao1))) {
+      conflitos.push({ nome: l.nome, tipo: '1ª Reunião' });
+    }
+    if (l.dataReuniao2 === data && l.horaReuniao2 === hora && ((reqGestor && l.requerGestorReuniao2) || (reqSupervisor && l.requerSupervisorReuniao2))) {
+      conflitos.push({ nome: l.nome, tipo: '2ª Reunião' });
+    }
+  });
+  return conflitos;
+}
+
+function atualizarConflitoAgendaFunil() {
+  const data = document.getElementById('mfa-data').value;
+  const hora = document.getElementById('mfa-hora').value;
+  const reqGestor = document.getElementById('mfa-gestor').checked;
+  const reqSupervisor = document.getElementById('mfa-supervisor').checked;
+  const conflitos = checarConflitoAgendaFunil(data, hora, reqGestor, reqSupervisor, _funilAgendaTarget?.leadId);
+  const el = document.getElementById('mfa-conflito');
+  const btn = document.getElementById('mfa-btn-confirmar');
+  if (conflitos.length > 0) {
+    el.style.display = 'block';
+    el.textContent = `⚠ Conflito de horário: ${conflitos.map(c => `${c.nome} (${c.tipo})`).join(', ')} já reservou esse mesmo horário.`;
+    btn.textContent = 'Confirmar mesmo assim';
+  } else {
+    el.style.display = 'none';
+    btn.textContent = 'Confirmar agendamento';
+  }
+}
+
+async function confirmarAgendamentoFunil() {
+  const { leadId, novaEtapa } = _funilAgendaTarget;
+  const data = document.getElementById('mfa-data').value;
+  const hora = document.getElementById('mfa-hora').value;
+  if (!data || !hora) return;
+  const reqGestor = document.getElementById('mfa-gestor').checked;
+  const reqSupervisor = document.getElementById('mfa-supervisor').checked;
+  const lead = DB.leadsFunil.find(l => l.id === leadId);
+  const historico = [...(lead.historico||[]), { etapa: novaEtapa, data: today() }];
+  const campoData = novaEtapa === 'reuniao1' ? 'data_reuniao1' : 'data_reuniao2';
+  const campoHora = novaEtapa === 'reuniao1' ? 'hora_reuniao1' : 'hora_reuniao2';
+  const campoGestor = novaEtapa === 'reuniao1' ? 'requer_gestor_reuniao1' : 'requer_gestor_reuniao2';
+  const campoSupervisor = novaEtapa === 'reuniao1' ? 'requer_supervisor_reuniao1' : 'requer_supervisor_reuniao2';
+  await Servicos.atualizarLeadFunil(leadId, {
+    etapa: novaEtapa, [campoData]: data, [campoHora]: hora,
+    [campoGestor]: reqGestor, [campoSupervisor]: reqSupervisor,
+    historico_etapas: historico,
+  });
+  closeModal('m-funil-agenda');
   await carregarDadosIniciais();
   rerenderModule('funil');
 }
