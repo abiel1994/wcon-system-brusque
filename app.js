@@ -266,7 +266,7 @@ const AppState = {
 
     tabelas:       { expandida: null, filterRef: 'all' },
     trabalho:      { vendId: null, filterSit: 'all' },
-    funil:         { filtroVend: 'todos', mesSel: null },
+    funil:         { filtroVend: null, mesSel: null },
     clientes:      { search: '' },
     vendedores:    {},
     dashboard:     { rankPeriodo: 'total' },
@@ -588,6 +588,7 @@ const Router = {
     estornos:      { label: 'Estornos',      icon: '✕', section: 'comercial', render: renderEstornos },
     trabalho:      { label: 'Relatório de Trabalho', icon: '', section: 'comercial', render: renderRelatorioTrabalho },
     funil:         { label: 'Funil de Atendimento', icon: '', section: 'comercial', render: renderFunil },
+    painelExecutivo: { label: 'Painel Executivo', icon: '', section: 'gestor', render: renderPainelExecutivoFunil },
     remuneracao:   { label: 'Comissão WCON', icon: '★', section: 'gestor', render: renderRemuneracao },
 
     tabelas:       { label: 'Tabelas',       icon: '≡', section: 'configuracao', render: renderTabelas },
@@ -1124,7 +1125,7 @@ function buildSidebar() {
   };
 
   const visibles = isG
-    ? ['dashboard','vendedores','clientes','relatorio','comissao','inadimplencia','estornos','trabalho','funil','remuneracao','tabelas','configuracoes']
+    ? ['dashboard','vendedores','clientes','relatorio','comissao','inadimplencia','estornos','trabalho','funil','painelExecutivo','remuneracao','tabelas','configuracoes']
     : ['dashboard','relatorio','comissao','inadimplencia','estornos','trabalho','funil','tabelas'];
 
   const badges = {
@@ -5506,7 +5507,6 @@ function renderConfiguracoes() {
   </div>
 </div>`;
   }
-
   return `
 <div class="page-header">
   <div>
@@ -5936,6 +5936,184 @@ ${renderModaisFunil()}
 `;
 }
 
+function renderPainelExecutivoFunil() {
+  const leads = DB.leadsFunil;
+  const hojeStr = today();
+  const mesAtualStr = todayMes();
+
+  function dataUltimaEtapa(lead, etapaAlvo) {
+    const evento = [...(lead.historico||[])].reverse().find(h => h.etapa === etapaAlvo);
+    return evento ? evento.data : null;
+  }
+  function diasDesde(dataStr) {
+    const d1 = new Date(dataStr + 'T00:00:00');
+    const d2 = new Date(hojeStr + 'T00:00:00');
+    return Math.round((d2 - d1) / 86400000);
+  }
+  function inicioSemana() {
+    const d = new Date(hojeStr + 'T00:00:00');
+    d.setDate(d.getDate() - 6);
+    return d.toISOString().split('T')[0];
+  }
+
+  const leadsAtivos = leads.filter(l => l.etapa !== 'venda' && l.etapa !== 'desqualificado');
+  const leadsGeradosHoje = leads.filter(l => l.criadoEm === hojeStr).length;
+  const leadsAguardandoContato = leads.filter(l => l.etapa === 'lead').length;
+  const leadsParados3dias = leadsAtivos.filter(l => {
+    const ultimaData = l.historico && l.historico.length ? l.historico[l.historico.length-1].data : null;
+    return ultimaData && diasDesde(ultimaData) > 3;
+  });
+  const reunioesEmAndamento = leads.filter(l => l.etapa === 'reuniao1' || l.etapa === 'reuniao2').length;
+
+  const valorEmNegociacao = leadsAtivos
+    .filter(l => ['reuniao2','analisando','aguardPagamento'].includes(l.etapa))
+    .reduce((a,l) => a + (l.valorCredito||0), 0);
+
+  const semanaInicioStr = inicioSemana();
+  const volumeVendidoHoje = leads.filter(l => dataUltimaEtapa(l,'venda') === hojeStr).reduce((a,l) => a+(l.valorVenda||0), 0);
+  const volumeVendidoSemana = leads.filter(l => { const d = dataUltimaEtapa(l,'venda'); return d && d >= semanaInicioStr; }).reduce((a,l) => a+(l.valorVenda||0), 0);
+  const volumeVendidoMes = leads.filter(l => { const d = dataUltimaEtapa(l,'venda'); return d && d.substring(0,7) === mesAtualStr; }).reduce((a,l) => a+(l.valorVenda||0), 0);
+
+  const totalVendasMes = leads.filter(l => { const d = dataUltimaEtapa(l,'venda'); return d && d.substring(0,7) === mesAtualStr; }).length;
+  const metaVendasEquipe = FUNIL_META.vendas * Math.max(DB.vendedores.length, 1);
+  const metaAtingidaPct = Math.min((totalVendasMes/metaVendasEquipe)*100, 999);
+
+  const conversaoPorEtapa = FUNIL_ETAPAS.map(et => ({ label: et.label, qtd: leads.filter(l => l.etapa === et.key).length }));
+
+  // Tempo pro 1º contato
+  const leadsComTempoResposta = leads.filter(l => l.criadoEmTs && l.primeiroContatoTs);
+  const temposResposta = leadsComTempoResposta.map(l => (new Date(l.primeiroContatoTs) - new Date(l.criadoEmTs)) / 60000);
+  const buckets = {
+    ate15min: temposResposta.filter(m => m <= 15).length,
+    ate1h:    temposResposta.filter(m => m > 15 && m <= 60).length,
+    ate24h:   temposResposta.filter(m => m > 60 && m <= 1440).length,
+    mais24h:  temposResposta.filter(m => m > 1440).length,
+  };
+  const tempoMedio = temposResposta.length > 0 ? temposResposta.reduce((a,m)=>a+m,0)/temposResposta.length : null;
+  function formatarMinutos(min) {
+    if (min == null) return '—';
+    if (min < 60) return `${min.toFixed(0)} min`;
+    if (min < 1440) return `${(min/60).toFixed(1)} h`;
+    return `${(min/1440).toFixed(1)} dias`;
+  }
+  const leadsEsperando = leads.filter(l => l.etapa === 'lead' && l.criadoEmTs)
+    .map(l => ({ ...l, minutosEsperando: (new Date() - new Date(l.criadoEmTs))/60000 }));
+
+  return `
+<div class="page-header">
+  <div>
+    <div class="page-title">Painel Executivo</div>
+    <div class="page-sub">// foto em tempo real da equipe toda — Funil de Atendimento</div>
+  </div>
+</div>
+
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="stat-label">Leads gerados hoje</div>
+    <div class="stat-value">${leadsGeradosHoje}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Aguard. 1º contato</div>
+    <div class="stat-value">${leadsAguardandoContato}</div>
+  </div>
+  <div class="stat-card ${leadsParados3dias.length>0?'red':''}">
+    <div class="stat-label">Parados +3 dias</div>
+    <div class="stat-value">${leadsParados3dias.length}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Reuniões em andamento</div>
+    <div class="stat-value">${reunioesEmAndamento}</div>
+  </div>
+</div>
+
+${leadsParados3dias.length > 0 ? `
+<div class="card" style="background:var(--red-dim);border:1px solid var(--brand-border)">
+  <div class="card-body">
+    <div style="font-size:11px;color:var(--brand);margin-bottom:8px;font-weight:600">⚠ ${leadsParados3dias.length} lead(s) parado(s) +3 dias — serão redistribuídos automaticamente se ninguém agir</div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      ${leadsParados3dias.map(l => {
+        const vend = DB.vendedores.find(v => v.id === l.vendedor);
+        return `<div style="display:flex;justify-content:space-between;align-items:center;background:var(--ink2);border-radius:6px;padding:6px 10px">
+          <span style="font-size:12px">${l.nome} <span style="color:var(--text3)">(${vend?.nome||'—'})</span></span>
+          <button class="btn btn-ghost btn-sm" onclick="redistribuirLeadFunil('${l.id}')">Redistribuir agora</button>
+        </div>`;
+      }).join('')}
+    </div>
+  </div>
+</div>` : ''}
+
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="stat-label">Valor em negociação</div>
+    <div class="stat-value" style="font-size:15px">${fmt(valorEmNegociacao)}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Vendido hoje</div>
+    <div class="stat-value" style="font-size:15px">${fmt(volumeVendidoHoje)}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Vendido na semana</div>
+    <div class="stat-value" style="font-size:15px">${fmt(volumeVendidoSemana)}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Vendido no mês</div>
+    <div class="stat-value" style="font-size:15px">${fmt(volumeVendidoMes)}</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:5px">
+      <span style="color:var(--text2)">Meta do mês atingida</span>
+      <span style="font-family:var(--mono)">${totalVendasMes}/${metaVendasEquipe} · ${metaAtingidaPct.toFixed(0)}%</span>
+    </div>
+    <div class="progress-wrap"><div class="progress-bar" style="width:${Math.min(metaAtingidaPct,100)}%;background:${metaAtingidaPct>=100?'var(--green)':'var(--brand)'}"></div></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
+      <div class="form-divider" style="margin:0">Tempo pro 1º contato</div>
+      <div style="font-size:10px;color:var(--text3)">Menor tempo, maior conversão</div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px">
+      <div style="background:var(--ink3);border-radius:6px;padding:8px;text-align:center">
+        <div style="font-size:15px;font-weight:600;font-family:var(--mono);color:var(--green)">${buckets.ate15min}</div>
+        <div style="font-size:8px;color:var(--text3);margin-top:2px">até 15min</div>
+      </div>
+      <div style="background:var(--ink3);border-radius:6px;padding:8px;text-align:center">
+        <div style="font-size:15px;font-weight:600;font-family:var(--mono)">${buckets.ate1h}</div>
+        <div style="font-size:8px;color:var(--text3);margin-top:2px">até 1h</div>
+      </div>
+      <div style="background:var(--ink3);border-radius:6px;padding:8px;text-align:center">
+        <div style="font-size:15px;font-weight:600;font-family:var(--mono)">${buckets.ate24h}</div>
+        <div style="font-size:8px;color:var(--text3);margin-top:2px">até 24h</div>
+      </div>
+      <div style="background:var(--ink3);border-radius:6px;padding:8px;text-align:center">
+        <div style="font-size:15px;font-weight:600;font-family:var(--mono);color:var(--brand)">${buckets.mais24h}</div>
+        <div style="font-size:8px;color:var(--text3);margin-top:2px">+24h</div>
+      </div>
+    </div>
+    <div style="font-size:10px;color:var(--text3)">Média da equipe: <strong style="color:var(--text);font-family:var(--mono)">${formatarMinutos(tempoMedio)}</strong></div>
+    ${leadsEsperando.length>0 ? `<div style="margin-top:8px;font-size:10px;color:var(--brand)">${leadsEsperando.length} lead(s) aguardando 1º contato agora — o mais antigo espera há ${formatarMinutos(Math.max(...leadsEsperando.map(l=>l.minutosEsperando)))}</div>` : ''}
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <div class="form-divider">Conversão por etapa do funil (todos os leads ativos)</div>
+    <div style="display:flex;gap:6px;overflow-x:auto">
+      ${conversaoPorEtapa.map(c => `<div style="background:var(--ink3);border-radius:6px;padding:6px 10px;min-width:70px;text-align:center;flex-shrink:0">
+        <div style="font-size:14px;font-weight:600;font-family:var(--mono)">${c.qtd}</div>
+        <div style="font-size:8px;color:var(--text3);margin-top:2px">${c.label}</div>
+      </div>`).join('')}
+    </div>
+  </div>
+</div>
+`;
+}
+
 function renderModaisFunil() {
   return `
 <div class="overlay" id="m-funil-novo">
@@ -6092,8 +6270,10 @@ async function salvarNovoLeadFunil() {
     payload = { ...base, origem: 'pago', vendedor_id: vendedorId, etapa: 'lead', tentativas: 0, historico_etapas: [{ etapa:'lead', data: today() }] };
     await Servicos.atualizarRodizio(idx);
   } else {
+    const agoraIso = new Date().toISOString();
     payload = {
       ...base, origem: 'ligacao', vendedor_id: u.id, etapa: 'contato', tentativas: 1,
+      primeiro_contato_ts: agoraIso,
       interesse: _funilInteresseSel, valor_credito: parseFloat(document.getElementById('mfn-valorcredito').value)||0,
       renda_familiar: parseFloat(document.getElementById('mfn-renda').value)||0,
       decide_compra: document.getElementById('mfn-decide').value,
@@ -6136,7 +6316,10 @@ async function moverEtapaFunil(leadId, novaEtapa) {
   if (!lead) return;
   const historico = [...(lead.historico||[]), { etapa: novaEtapa, data: today() }];
   const patch = { etapa: novaEtapa, historico_etapas: historico };
-  if (novaEtapa === 'contato') patch.tentativas = (lead.tentativas||0) + 1;
+  if (novaEtapa === 'contato') {
+    patch.tentativas = (lead.tentativas||0) + 1;
+    if (!lead.primeiroContatoTs) patch.primeiro_contato_ts = new Date().toISOString();
+  }
   const ok = await Servicos.atualizarLeadFunil(leadId, patch);
   if (!ok) { Dialog.alert('Erro', ['Não foi possível atualizar o lead.']); return; }
   await carregarDadosIniciais();
