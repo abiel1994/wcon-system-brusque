@@ -5986,7 +5986,35 @@ function renderPainelExecutivoFunil() {
   const metaVendasEquipe = FUNIL_META.vendas * Math.max(DB.vendedores.length, 1);
   const metaAtingidaPct = Math.min((totalVendasMes/metaVendasEquipe)*100, 999);
 
-  const conversaoPorEtapa = FUNIL_ETAPAS.map(et => ({ label: et.label, qtd: leads.filter(l => l.etapa === et.key).length }));
+  const funilCaptacao = ['lead','contato','qualificacao','reuniao1'].map(k => ({
+    key: k, label: FUNIL_ETAPAS.find(e => e.key === k).label, qtd: emEtapaOuDepoisFunil(leads, k),
+  }));
+  const funilFechamento = ['reuniao2','analisando','aguardPagamento','venda'].map(k => ({
+    key: k, label: FUNIL_ETAPAS.find(e => e.key === k).label, qtd: emEtapaOuDepoisFunil(leads, k),
+  }));
+  function montarFunilHtml(etapas, corBase) {
+    const topo = Math.max(etapas[0].qtd, 1);
+    const cores = corBase === 'azul'
+      ? ['#378ADD','#185FA5','#0C447C','#042C53']
+      : ['#97C459','#639922','#3B6D11','#27500A'];
+    const textoClaro = corBase === 'azul' ? '#E6F1FB' : '#EAF3DE';
+    return etapas.map((et, i) => {
+      const largura = Math.max(Math.round((et.qtd/topo)*260), 48);
+      const anterior = i > 0 ? etapas[i-1].qtd : null;
+      const pctAnterior = anterior && anterior > 0 ? Math.round((et.qtd/anterior)*100) : null;
+      const pctTopo = Math.round((et.qtd/topo)*100);
+      const ultimo = i === etapas.length-1;
+      const clip = ultimo ? '' : `clip-path:polygon(0 0,100% 0,${94-i*2}% 100%,${6+i*2}% 100%);`;
+      const radius = ultimo ? 'border-radius:0 0 6px 6px;' : '';
+      return `
+        <div style="width:${largura}px;${clip}${radius}background:${cores[i]};padding:10px 4px;text-align:center;margin:0 auto;overflow:hidden">
+          <div style="font-size:8px;color:${textoClaro};font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${et.label}</div>
+          <div style="font-size:18px;font-weight:700;font-family:var(--mono);color:#fff">${et.qtd}</div>
+        </div>
+        ${!ultimo ? `<div style="font-size:8px;color:var(--text3);margin:2px 0;text-align:center">${pctAnterior!==null?`↓ ${pctAnterior}% de conversão`:''} · Σ ${pctTopo}% do funil</div>` : ''}
+      `;
+    }).join('');
+  }
 
   // Tempo pro 1º contato
   const leadsComTempoResposta = leads.filter(l => l.criadoEmTs && l.primeiroContatoTs);
@@ -6110,12 +6138,16 @@ ${leadsParados3dias.length > 0 ? `
 
 <div class="card">
   <div class="card-body">
-    <div class="form-divider">Conversão por etapa do funil (todos os leads ativos)</div>
-    <div style="display:flex;gap:6px;overflow-x:auto">
-      ${conversaoPorEtapa.map(c => `<div style="background:var(--ink3);border-radius:6px;padding:6px 10px;min-width:70px;text-align:center;flex-shrink:0">
-        <div style="font-size:14px;font-weight:600;font-family:var(--mono)">${c.qtd}</div>
-        <div style="font-size:8px;color:var(--text3);margin-top:2px">${c.label}</div>
-      </div>`).join('')}
+    <div class="form-divider">Conversão do funil (leads ativos, contagem acumulada por etapa)</div>
+    <div style="display:flex;gap:24px;flex-wrap:wrap;justify-content:center;padding:8px 0">
+      <div style="flex:1;min-width:220px;max-width:280px">
+        <div style="font-size:9px;font-weight:700;color:var(--text3);letter-spacing:1.2px;text-transform:uppercase;margin-bottom:10px;text-align:center">Funil de captação</div>
+        ${montarFunilHtml(funilCaptacao, 'azul')}
+      </div>
+      <div style="flex:1;min-width:220px;max-width:280px">
+        <div style="font-size:9px;font-weight:700;color:var(--text3);letter-spacing:1.2px;text-transform:uppercase;margin-bottom:10px;text-align:center">Funil de fechamento</div>
+        ${montarFunilHtml(funilFechamento, 'verde')}
+      </div>
     </div>
   </div>
 </div>
