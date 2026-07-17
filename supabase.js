@@ -101,11 +101,11 @@ const Servicos = {
     return data;
   },
 
-  // NOVO — tabela de comissão pessoal do supervisor (opcional; se a tabela não
-  // existir no banco ainda, retorna [] e o app usa o fallback fixo do app.js)
-  async listarTabelasSupervisor() {
-    const { data, error } = await sb.from('tabelas_comissao_supervisor').select('*');
-    if (error) { console.warn('tabelas_comissao_supervisor não encontrada (usando fallback fixo):', error.message); return []; }
+  // Tabela de comissão de gerência (com/sem líder de equipe) — se não existir
+  // ainda no banco, retorna [] e o app usa o fallback fixo do app.js
+  async listarTabelasComissaoGerencia() {
+    const { data, error } = await sb.from('tabelas_comissao_gerencia').select('*');
+    if (error) { console.warn('tabelas_comissao_gerencia não encontrada (usando fallback fixo):', error.message); return []; }
     return data;
   },
 
@@ -254,18 +254,18 @@ const Servicos = {
 async function carregarDadosIniciais() {
   mostrarCarregando(true);
   try {
-    const [vendedores, clientes, tabelas, tabelasSupervisor, vendas, fechGestor, fechVendedores, acessoTabelas] = await Promise.all([
+    const [vendedores, clientes, tabelas, tabelasComissaoGerencia, vendas, fechGestor, fechVendedores, acessoTabelas] = await Promise.all([
       Servicos.listarVendedores(),
       Servicos.listarClientes(),
       Servicos.listarTabelas(),
-      Servicos.listarTabelasSupervisor(),
+      Servicos.listarTabelasComissaoGerencia(),
       Servicos.listarVendas(),
       Servicos.listarFechamentosGestor(),
       Servicos.listarFechamentos(),
       Servicos.listarAcessoTabelas(),
     ]);
 
-    // ── Vendedores (agora com role e supervisorId) ─────────────────────────
+    // ── Vendedores ──────────────────────────────────────────────────────────
     DB.vendedores = vendedores.map(v => ({
       id:           v.id,
       nome:         v.nome,
@@ -273,8 +273,7 @@ async function carregarDadosIniciais() {
       meta:         parseFloat(v.meta || 0),
       dataEntrada:  v.data_entrada ? String(v.data_entrada).substring(0,10) : null,
       modelo:       v.modelo || 'modelo1',
-      role:         v.role === 'supervisor' ? 'supervisor' : 'vendedor',
-      supervisorId: v.supervisor_id || null,
+      liderId:      v.lider_id || null, // quem é o líder de equipe dele (null = reporta direto ao gestor)
       primeiroAcesso: v.primeiro_acesso !== false,
       foto:         v.foto_url || null,
     }));
@@ -302,17 +301,16 @@ async function carregarDadosIniciais() {
       ativo:    t.ativo !== false,
     }));
 
-    // ── Tabela de comissão do supervisor (se existir no banco, sobrescreve
-    //    o fallback fixo definido em DB.tabelasSupervisor no app.js) ─────────
-    if (tabelasSupervisor && tabelasSupervisor.length > 0) {
-      DB.tabelasSupervisor = tabelasSupervisor.map(t => ({
-        id:       t.id,
-        nome:     t.nome,
-        parcelas: Array.isArray(t.parcelas) ? t.parcelas : JSON.parse(t.parcelas || '[]'),
+    // ── Comissão de gerência por produto (com/sem líder de equipe) ──────────
+    if (tabelasComissaoGerencia && tabelasComissaoGerencia.length > 0) {
+      DB.tabelasComissaoGerencia = tabelasComissaoGerencia.map(g => ({
+        tabela_id:     g.tabela_id,
+        comSupervisor: Array.isArray(g.com_supervisor) ? g.com_supervisor : JSON.parse(g.com_supervisor || '[]'),
+        semSupervisor: Array.isArray(g.sem_supervisor) ? g.sem_supervisor : JSON.parse(g.sem_supervisor || '[]'),
       }));
     }
-    // Se a tabela não existir no banco ainda, DB.tabelasSupervisor definido
-    // fixo no app.js continua valendo (fallback).
+    // Se a tabela não existir no banco ainda, DB.tabelasComissaoGerencia
+    // definida fixa no app.js continua valendo (fallback).
 
     // ── Vendas ──────────────────────────────────────────────────────────────
     DB.vendas = vendas.map(v => {
