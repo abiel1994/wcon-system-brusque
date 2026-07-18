@@ -6811,6 +6811,36 @@ async function redistribuirLeadFunil(leadId) {
   rerenderModule('funil');
 }
 
+// NOVO: Redistribuição automática — roda uma vez ao carregar o app. Pega
+// todo lead ativo parado há mais de 3 dias (que ninguém redistribuiu
+// manualmente ainda hoje) e manda pro vendedor com melhor performance do mês.
+async function verificarRedistribuicaoAutomaticaFunil() {
+  if (!DB.vendedores || DB.vendedores.length === 0) return; // sem vendedor, não tem pra quem redistribuir
+  const hojeStr = today();
+  const pendentes = DB.leadsFunil.filter(l => {
+    if (l.etapa === 'venda' || l.etapa === 'desqualificado') return false;
+    if (l.autoRedistribuidoEm === hojeStr) return false; // já rodou hoje pra esse lead
+    const ultimaData = l.historico && l.historico.length ? l.historico[l.historico.length-1].data : null;
+    if (!ultimaData) return false;
+    const dias = Math.round((new Date(hojeStr+'T00:00:00') - new Date(ultimaData+'T00:00:00')) / 86400000);
+    return dias > 3;
+  });
+  if (pendentes.length === 0) return;
+
+  for (const lead of pendentes) {
+    const mes = (lead.criadoEm||hojeStr).substring(0,7);
+    const novoVendedor = melhorPerformanceFunil(lead.vendedor, mes);
+    const historico = [...(lead.historico||[]), { etapa: lead.etapa, data: hojeStr, nota: 'Redistribuído automaticamente (parado 3+ dias)' }];
+    await Servicos.atualizarLeadFunil(lead.id, {
+      vendedor_anterior_id: lead.vendedor, vendedor_id: novoVendedor, tentativas: 0,
+      vezes_redistribuido: (lead.vezesRedistribuido||0) + 1,
+      auto_redistribuido_em: hojeStr, historico_etapas: historico,
+    });
+  }
+  await carregarDadosIniciais();
+  console.log(`🔄 Redistribuição automática: ${pendentes.length} lead(s) parado(s) redistribuído(s).`);
+}
+
 function verDetalheLeadFunil(leadId) {
   const lead = DB.leadsFunil.find(l => l.id === leadId);
   if (!lead) return;
@@ -6881,6 +6911,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initTheme();
 
   await carregarDadosIniciais();
+  await verificarRedistribuicaoAutomaticaFunil();
 
   await tentarSessaoSalva();
 
