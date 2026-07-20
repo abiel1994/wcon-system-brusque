@@ -1,0 +1,205 @@
+/* ============================================================
+   WCON System — Correção de impressão do Demonstrativo
+   Adicione no <head> após mobile-responsive.css:
+   <link rel="stylesheet" href="print-fix.css">
+   ============================================================ */
+
+@media print {
+
+  /* ── Reset geral de impressão ── */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+
+  /* Esconde tudo exceto o modal aberto */
+  body > *:not(#app) { display: none !important; }
+  #app { display: block !important; }
+
+  #header,
+  #sidebar,
+  #mobile-overlay,
+  #wcon-bottom-nav,
+  #main-content > .module:not(.active),
+  .no-print,
+  .modal-actions,
+  .page-actions,
+  .filter-bar,
+  .month-nav,
+  .stats-grid,
+  .vendor-filter,
+  .page-header .page-actions { display: none !important; }
+
+  /* Mostra só o modal ativo */
+  .overlay {
+    position: static !important;
+    background: none !important;
+    display: block !important;
+  }
+
+  .overlay:not(.open) { display: none !important; }
+
+  .modal,
+  .modal-box {
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+  }
+
+  /* ── Cabeçalho do demonstrativo ── */
+  #md-body,
+  #mdg-body {
+    overflow: visible !important;
+  }
+
+  /* ── Tabela — ocupa 100% da folha ── */
+  #md-body table,
+  #mdg-body table {
+    width: 100% !important;
+    min-width: unset !important;
+    table-layout: fixed !important;
+    border-collapse: collapse !important;
+    font-size: 10px !important;
+    page-break-inside: auto !important;
+  }
+
+  #md-body .table-wrap,
+  #mdg-body .table-wrap,
+  #md-body [style*="overflow-x"],
+  #mdg-body [style*="overflow-x"] {
+    overflow: visible !important;
+  }
+
+  /* ── Larguras fixas das colunas ── */
+
+  /* Demonstrativo Vendedor — 6 colunas */
+  #md-body table th:nth-child(1),
+  #md-body table td:nth-child(1) { width: 30% !important; }  /* Cliente */
+  #md-body table th:nth-child(2),
+  #md-body table td:nth-child(2) { width: 12% !important; }  /* Contrato */
+  #md-body table th:nth-child(3),
+  #md-body table td:nth-child(3) { width: 14% !important; }  /* Tabela */
+  #md-body table th:nth-child(4),
+  #md-body table td:nth-child(4) { width: 10% !important; }  /* Parcela */
+  #md-body table th:nth-child(5),
+  #md-body table td:nth-child(5) { width: 14% !important; }  /* Venc. cliente */
+  #md-body table th:nth-child(6),
+  #md-body table td:nth-child(6) { width: 12% !important; text-align: right !important; } /* Valor */
+
+  /* Demonstrativo Gestor — 7 colunas (tem coluna Vendedor) */
+  #mdg-body table th:nth-child(1),
+  #mdg-body table td:nth-child(1) { width: 26% !important; }  /* Cliente */
+  #mdg-body table th:nth-child(2),
+  #mdg-body table td:nth-child(2) { width: 11% !important; }  /* Contrato */
+  #mdg-body table th:nth-child(3),
+  #mdg-body table td:nth-child(3) { width: 12% !important; }  /* Tabela */
+  #mdg-body table th:nth-child(4),
+  #mdg-body table td:nth-child(4) { width: 9% !important;  }  /* Parcela */
+  #mdg-body table th:nth-child(5),
+  #mdg-body table td:nth-child(5) { width: 12% !important; }  /* Venc. cliente */
+  #mdg-body table th:nth-child(6),
+  #mdg-body table td:nth-child(6) { width: 10% !important; }  /* Vendedor */
+  #mdg-body table th:nth-child(7),
+  #mdg-body table td:nth-child(7) { width: 12% !important; text-align: right !important; } /* Valor */
+
+  /* ── Células ── */
+  #md-body table td,
+  #md-body table th,
+  #mdg-body table td,
+  #mdg-body table th {
+    padding: 5px 6px !important;
+    font-size: 10px !important;
+    word-break: break-word !important;
+    white-space: normal !important;
+    vertical-align: middle !important;
+    line-height: 1.3 !important;
+  }
+
+  /* Nome do cliente — quebra normal */
+  #md-body table td:nth-child(1),
+  #mdg-body table td:nth-child(1) {
+    word-break: break-word !important;
+    white-space: normal !important;
+  }
+
+  /* Valores monetários — não quebra */
+  #md-body table td:nth-child(6),
+  #mdg-body table td:nth-child(7) {
+    white-space: nowrap !important;
+    font-weight: 700 !important;
+  }
+
+  /* Badge de parcela (1ª / 6) */
+  #md-body table td:nth-child(4) span,
+  #mdg-body table td:nth-child(4) span {
+    font-size: 9px !important;
+    padding: 1px 4px !important;
+    display: inline-block !important;
+  }
+
+  /* ── Seções coloridas (PRODUÇÃO, RECORRÊNCIA) ── */
+  #md-body table tr td[colspan],
+  #mdg-body table tr td[colspan] {
+    padding: 5px 8px !important;
+    font-size: 9px !important;
+    font-weight: 700 !important;
+    letter-spacing: 1px !important;
+  }
+
+  /* ── Rodapé com valor líquido ── */
+  #md-body [style*="brand-dim"],
+  #mdg-body [style*="brand-dim"] {
+    padding: 10px 12px !important;
+    margin-top: 0 !important;
+    border-top: 2px solid #C0392B !important;
+  }
+
+  #md-body [style*="brand-dim"] div[style*="font-size:24px"],
+  #mdg-body [style*="brand-dim"] div[style*="font-size:24px"] {
+    font-size: 18px !important;
+  }
+
+  /* ── Cabeçalho do documento ── */
+  #md-body [style*="ink3"],
+  #mdg-body [style*="ink3"] {
+    padding: 10px 12px !important;
+    border-radius: 0 !important;
+    margin-bottom: 8px !important;
+  }
+
+  /* ── Modo compacto — fonte menor para listas grandes ── */
+  .compact-print table td,
+  .compact-print table th {
+    padding: 3px 5px !important;
+    font-size: 9px !important;
+  }
+
+  .compact-print [style*="font-size:24px"] {
+    font-size: 14px !important;
+  }
+
+  /* ── Quebra de página ── */
+  #md-body table thead,
+  #mdg-body table thead {
+    display: table-header-group !important;
+  }
+
+  #md-body table tr,
+  #mdg-body table tr {
+    page-break-inside: avoid !important;
+  }
+
+  /* ── Margens da página ── */
+  @page {
+    margin: 12mm 10mm !important;
+    size: A4 portrait !important;
+  }
+}
