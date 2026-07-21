@@ -269,6 +269,7 @@ const AppState = {
     funil:         { filtroVend: null, mesSel: null },
     agendaFunil:   { mesCalendario: null, diaSelecionado: null },
     leadsPainel:   { mesSel: null },
+    comissaoSupervisor: { mesSel: null, supervisorId: null },
     clientes:      { search: '' },
     vendedores:    {},
     dashboard:     { rankPeriodo: 'total' },
@@ -567,12 +568,19 @@ function vendorName(id) {
 function vendasNoEscopo(u) {
   const isG = (u.role === 'gestor' || u.role === 'adm');
   if (isG) return DB.vendas;
+  if (u.role === 'supervisor') {
+    const idsEquipe = DB.vendedores.filter(v => v.liderId === u.id).map(v => v.id);
+    return DB.vendas.filter(v => v.vendedor === u.id || idsEquipe.includes(v.vendedor));
+  }
   return DB.vendas.filter(v => v.vendedor === u.id);
 }
 
 function vendedoresNoEscopo(u) {
   const isG = (u.role === 'gestor' || u.role === 'adm');
   if (isG) return DB.vendedores;
+  if (u.role === 'supervisor') {
+    return DB.vendedores.filter(v => v.id === u.id || v.liderId === u.id);
+  }
   return [DB.vendedores.find(v => v.id === u.id)].filter(Boolean);
 }
 
@@ -591,6 +599,7 @@ const Router = {
     relatorio:     { label: 'Relatórios',    icon: '▦', section: 'comercial', render: renderRelatorio },
 
     comissao:      { label: 'Comissões',     icon: '◆', section: 'financeiro', render: renderComissao },
+    comissaoSupervisor: { label: 'Comissão Supervisor', icon: '★', section: 'financeiro', render: renderComissaoSupervisorBrusque },
     remuneracao:   { label: 'Comissão WCON', icon: '★', section: 'financeiro', render: renderRemuneracao },
     inadimplencia: { label: 'Inadimplência', icon: '▲', section: 'financeiro', render: renderInadimplencia },
     estornos:      { label: 'Estornos',      icon: '✕', section: 'financeiro', render: renderEstornos },
@@ -659,8 +668,12 @@ function resolveUserByEmail(authUser) {
     return { id: authId || 'adm', nome: admUser.nome, email: authEmail, role: 'adm', primeiroAcesso: meta.primeiro_acesso !== false, foto: meta.foto_url || null };
   }
   const vend = DB.vendedores.find(v => (v.email || '').toLowerCase() === authEmail);
-  // NOVO: preserva o role vindo do banco (supervisor) em vez de forçar 'vendedor'
-  if (vend) return { ...vend, role: 'vendedor' };
+  // NOVO: supervisor não é um campo próprio — é derivado de quem tem
+  // liderId apontando pra esse vendedor (ou seja, alguém reporta a ele/ela)
+  if (vend) {
+    const ehSupervisor = DB.vendedores.some(v => v.liderId === vend.id);
+    return { ...vend, role: ehSupervisor ? 'supervisor' : 'vendedor' };
+  }
   return null;
 }
 
@@ -1134,7 +1147,9 @@ function buildSidebar() {
 
   const visibles = isG
     ? ['dashboard','trabalho','vendedores','clientes','funil','agendaFunil','relatorio','comissao','remuneracao','inadimplencia','estornos','painelExecutivo','leadsPainel','tabelas','configuracoes']
-    : ['dashboard','trabalho','funil','agendaFunil','relatorio','comissao','inadimplencia','estornos','tabelas'];
+    : isSup
+      ? ['dashboard','trabalho','funil','agendaFunil','relatorio','comissao','comissaoSupervisor','inadimplencia','estornos','tabelas']
+      : ['dashboard','trabalho','funil','agendaFunil','relatorio','comissao','inadimplencia','estornos','tabelas'];
 
   const badges = {
     inadimplencia: DB.vendas.filter(v => v.status === 'inadimplente' && (isG ? true : vendasNoEscopo(u).some(x=>x.id===v.id))).length,
@@ -1672,6 +1687,28 @@ async function excluirVendedorUI(id) {
 }
 
 let _acessoTabelasTarget = null;
+let _definirLiderTarget = null;
+
+function abrirDefinirLiderUI(vendedorId) {
+  const v = DB.vendedores.find(x => x.id === vendedorId);
+  if (!v) return;
+  _definirLiderTarget = vendedorId;
+  document.getElementById('mdl-sub').textContent = `Vendedor: ${v.nome}`;
+  const select = document.getElementById('mdl-lider');
+  const opcoes = DB.vendedores.filter(x => x.id !== vendedorId);
+  select.innerHTML = '<option value="">Ninguém (reporta direto ao gestor)</option>' +
+    opcoes.map(x => `<option value="${x.id}" ${v.liderId===x.id?'selected':''}>${x.nome}</option>`).join('');
+  openModal('m-definir-lider');
+}
+
+async function salvarLiderUI() {
+  const novoLider = document.getElementById('mdl-lider').value || null;
+  await Servicos.salvarVendedor({ id: _definirLiderTarget, lider_id: novoLider });
+  closeModal('m-definir-lider');
+  await carregarDadosIniciais();
+  rerenderModule('vendedores');
+}
+
 function abrirAcessoTabelas(vendedorId) {
   const v = DB.vendedores.find(x => x.id === vendedorId);
   if (!v) return;
@@ -1811,7 +1848,8 @@ function renderVendedores() {
         <div style="display:flex;align-items:center;gap:10px">
           <div style="width:30px;height:30px;border-radius:8px;background:var(--gold-dim);border:1px solid var(--gold-glow);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--gold);overflow:hidden">${v.foto ? `<img src="${v.foto}" style="width:100%;height:100%;object-fit:cover">` : initials(v.nome)}</div>
           <div>
-            <div style="font-weight:600;font-size:13px">${v.nome}</div>
+            <div style="font-weight:600;font-size:13px">${v.nome}${DB.vendedores.some(x=>x.liderId===v.id) ? ' <span class="badge badge-purple" style="font-size:8px">LÍDER DE EQUIPE</span>' : ''}</div>
+            ${v.liderId ? `<div style="font-size:10px;color:var(--text3)">reporta a: ${DB.vendedores.find(x=>x.id===v.liderId)?.nome || '—'}</div>` : ''}
             <div style="font-size:11px;color:var(--text3);font-family:var(--mono)">${v.email}</div>
           </div>
         </div>
@@ -1843,6 +1881,7 @@ function renderVendedores() {
         <div style="display:flex;gap:6px">
           <button class="btn btn-ghost btn-sm btn-icon" onclick="Router.navigate('relatorio')" title="Ver relatório">▦</button>
           ${isGestorPuro ? `<button class="btn btn-ghost btn-sm btn-icon" onclick="abrirAcessoTabelas('${v.id}')" title="Tabelas liberadas para este vendedor">🔑</button>` : ''}
+          ${isGestorPuro ? `<button class="btn btn-ghost btn-sm btn-icon" onclick="abrirDefinirLiderUI('${v.id}')" title="Definir líder de equipe" style="color:var(--purple)">👥</button>` : ''}
           ${isGestorPuro ? `<button class="btn btn-ghost btn-sm btn-icon" onclick="excluirVendedorUI('${v.id}')" title="Excluir vendedor" style="color:var(--red)">✕</button>` : ''}
         </div>
       </td>
@@ -1916,7 +1955,30 @@ function renderVendedores() {
       <button class="btn btn-primary" onclick="salvarNovoVendedor()">Salvar vendedor</button>
     </div>
   </div>
-</div>`;
+</div>
+
+<!-- NOVO: Modal Definir Líder de Equipe -->
+<div class="overlay" id="m-definir-lider">
+  <div class="modal" style="max-width:420px">
+    <button class="modal-close" onclick="closeModal('m-definir-lider')">✕</button>
+    <div class="modal-title">Líder de equipe</div>
+    <div class="modal-sub" id="mdl-sub"></div>
+    <div class="form-group">
+      <label>Este vendedor reporta a:</label>
+      <select id="mdl-lider">
+        <option value="">Ninguém (reporta direto ao gestor)</option>
+      </select>
+    </div>
+    <div style="font-size:11px;color:var(--text3);margin-bottom:10px">
+      Se escolher alguém aqui, essa pessoa passa a ser líder de equipe automaticamente (comissão de supervisão + acesso à aba "Comissão Supervisor" sobre quem reporta a ela).
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('m-definir-lider')">Cancelar</button>
+      <button class="btn btn-primary" onclick="salvarLiderUI()">Salvar</button>
+    </div>
+  </div>
+</div>
+`;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -4430,6 +4492,7 @@ async function registrarParcEstorno(vendaId) {
 function renderTabelas() {
   const u   = AppState.user;
   const isG = (u.role === 'gestor' || u.role === 'adm');
+  const isSup = u.role === 'supervisor';
   const isGestorPuro = (u.role === 'gestor' || u.role === 'adm');
   const st  = AppState.modulo.tabelas;
 
@@ -4447,67 +4510,97 @@ function renderTabelas() {
       onclick="AppState.modulo.tabelas.filterRef='${s}';rerenderModule('tabelas')">${lbl} (${cnt})</button>`
   ).join('');
 
-  // NOVO: separa Modelo PJ (ids com sufixo _R, ex: SM_R, BA_R — hoje é a
-  // configuração da Renata) do Modelo Fixo (todo o resto), pra não misturar
-  // visualmente. Se no futuro tiver outro sufixo de PJ, só adicionar aqui.
-  const ehModeloPJ = tab => /_R$/i.test(tab.id);
-  const tabsFixo = tabsFilt.filter(t => !ehModeloPJ(t));
-  const tabsPJ   = tabsFilt.filter(t => ehModeloPJ(t));
-
-  const renderTabelaCard = (tab) => {
-    const ativas = tab.parcelas.filter(p => p > 0);
-    const total  = ativas.length;
+  const renderTabelaRow = (tab) => {
     const expanded = st.expandida === tab.id;
+    const inativa = tab.ativo === false;
+    const regraGerencia = DB.tabelasComissaoGerencia.find(g => g.tabela_id === tab.id);
 
     const parcItems = tab.parcelas.map((pct, i) => {
       const zero = pct === 0;
       return `<div class="parc-item${zero ? ' zero' : ''}">
         <div class="parc-n">${i + 1}ª parc.</div>
-        <div class="parc-pct">${zero ? '—' : (pct * 100) + '%'}</div>
+        <div class="parc-pct">${zero ? '—' : (pct * 100).toFixed(2).replace(/\.?0+$/,'') + '%'}</div>
       </div>`;
     }).join('');
+    const totalVendedor = (tab.parcelas.reduce((a,p) => a+p, 0) * 100).toFixed(2).replace(/\.?0+$/,'');
 
-    const acesso = isG ? '' : `<span class="badge badge-green" style="font-size:9px">Acesso liberado</span>`;
-    const inativa = tab.ativo === false;
-    const statusBadge = inativa ? `<span class="badge badge-gray" style="font-size:9px">INATIVA</span>` : '';
+    // NOVO: comissão de gerência/supervisão, visível conforme o role de
+    // quem está olhando — gestor vê tudo, supervisor só a própria parte
+    let blocoGerencia = '';
+    if (regraGerencia && (isG || isSup)) {
+      const somaSemLider = (regraGerencia.semSupervisor.reduce((a,p)=>a+p,0)).toFixed(2).replace(/\.?0+$/,'');
+      const somaComLider = (regraGerencia.comSupervisor.reduce((a,p)=>a+p,0)).toFixed(2).replace(/\.?0+$/,'');
+      const linhaParc = (arr, cor) => arr.map((p,i) => `
+        <div style="flex:1;text-align:center">
+          <div style="font-size:8px;color:${cor}">${i+1}ª</div>
+          <div style="font-size:13px;font-weight:700;font-family:var(--mono)">${(p*100).toFixed(2).replace(/\.?0+$/,'')}%</div>
+        </div>`).join('');
+
+      blocoGerencia = `
+        <div style="font-size:9px;font-weight:700;color:var(--text3);letter-spacing:1.2px;text-transform:uppercase;margin:16px 0 8px">Comissão de gerência / supervisão (3 primeiras parcelas)</div>
+        ${isG ? `
+        <div style="background:var(--amber-dim);border:1px solid var(--amber-glow);border-radius:8px;padding:10px;margin-bottom:8px">
+          <div style="font-size:10px;font-weight:700;color:var(--amber);margin-bottom:2px">Sem líder de equipe</div>
+          <div style="font-size:9px;color:var(--text2);margin-bottom:6px">Gerente recebe sozinho, sobre toda a produção do vendedor</div>
+          <div style="display:flex;gap:6px;align-items:center">
+            <span style="font-size:10px;color:var(--text2);min-width:80px">Gerente:</span>
+            ${linhaParc(regraGerencia.semSupervisor, 'var(--text3)')}
+            <span style="font-size:11px;font-weight:800;margin-left:8px">= ${somaSemLider}%</span>
+          </div>
+        </div>` : ''}
+        <div style="background:var(--green-dim);border:1px solid var(--green-glow);border-radius:8px;padding:10px">
+          <div style="font-size:10px;font-weight:700;color:var(--green);margin-bottom:2px">Com líder de equipe</div>
+          <div style="font-size:9px;color:var(--text2);margin-bottom:6px">${isG ? 'Os dois recebem — gerente E supervisor(a), cada um com sua parte, sobre a mesma venda' : 'Sua comissão como líder de equipe sobre a venda do vendedor'}</div>
+          ${isG ? `
+          <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px">
+            <span style="font-size:10px;color:var(--text2);min-width:80px">Gerente:</span>
+            ${linhaParc(regraGerencia.comSupervisor, 'var(--text3)')}
+            <span style="font-size:11px;font-weight:800;margin-left:8px">= ${somaComLider}%</span>
+          </div>` : ''}
+          <div style="display:flex;gap:6px;align-items:center">
+            <span style="font-size:10px;color:var(--text2);min-width:80px">Supervisor(a):</span>
+            ${linhaParc(regraGerencia.comSupervisor, 'var(--text3)')}
+            <span style="font-size:11px;font-weight:800;margin-left:8px">= ${somaComLider}%</span>
+          </div>
+        </div>`;
+    }
 
     return `<div class="tabela-card"${inativa ? ' style="opacity:0.55"' : ''}>
       <div class="tabela-header" onclick="toggleTabela('${tab.id}')">
         <div>
           <div class="tabela-name">${tab.nome}</div>
-          <div class="tabela-ref">${tab.ref}</div>
+          <div class="tabela-ref">id: ${tab.id} · ${tab.ref}</div>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
-          <span class="chip">${total} parcelas ativas</span>
-          ${statusBadge}
-          ${acesso}
-          <button class="btn btn-ghost btn-sm btn-icon">${expanded ? '▴' : '▾'}</button>
+          ${inativa ? `<span class="badge badge-gray" style="font-size:9px">INATIVA</span>` : ''}
+          <button class="btn ${expanded ? 'btn-primary' : 'btn-ghost'} btn-sm">Detalhes ${expanded ? '▴' : '▾'}</button>
         </div>
       </div>
       <div class="tabela-body${expanded ? ' open' : ''}">
+        <div style="font-size:9px;font-weight:700;color:var(--text3);letter-spacing:1.2px;text-transform:uppercase;margin-bottom:8px">Comissão do vendedor (10 parcelas) · total ${totalVendedor}%</div>
         <div class="parc-grid">${parcItems}</div>
-        ${isG ? `
+        ${blocoGerencia}
+        ${isGestorPuro ? `
         <div style="display:flex;gap:8px;margin-top:14px">
-          ${isGestorPuro ? `<button class="btn btn-ghost btn-sm" onclick="editarTabela('${tab.id}')">✎ Editar</button>` : ''}
+          <button class="btn btn-ghost btn-sm" onclick="editarTabela('${tab.id}')">✎ Editar</button>
           <button class="btn btn-ghost btn-sm" onclick="verSimulacao('${tab.id}')">◎ Simular venda</button>
-          ${isGestorPuro ? `<button class="btn ${inativa ? 'btn-primary' : 'btn-danger'} btn-sm" onclick="toggleAtivoTabela('${tab.id}')">${inativa ? '✓ Reativar' : '⊘ Desativar'}</button>` : ''}
+          <button class="btn ${inativa ? 'btn-primary' : 'btn-danger'} btn-sm" onclick="toggleAtivoTabela('${tab.id}')">${inativa ? '✓ Reativar' : '⊘ Desativar'}</button>
         </div>` : ''}
       </div>
     </div>`;
   };
 
-  const cardsFixo = tabsFixo.map(renderTabelaCard).join('');
-  const cardsPJ   = tabsPJ.map(renderTabelaCard).join('');
+  const cardsLista = tabsFilt.map(renderTabelaRow).join('');
 
   const semEstornoInfo = DB.semEstorno.map(id => {
     const t = DB.tabelas.find(x => x.id === id);
     return t ? `<span class="chip">${t.nome}</span>` : '';
   }).join(' ');
 
-  const acomp6Info = DB.acomp6.map(id => {
+  const acomp6Info = DB.acomp6.length > 0 ? DB.acomp6.map(id => {
     const t = DB.tabelas.find(x => x.id === id);
     return t ? `<span class="chip">${t.nome}</span>` : '';
-  }).join(' ');
+  }).join(' ') : '<span style="font-size:12px;color:var(--text3)">Nenhuma tabela nessa condição</span>';
 
   return `
 <div class="page-header">
@@ -4520,43 +4613,7 @@ function renderTabelas() {
 
 <div class="filter-bar">${pills}</div>
 
-<div class="card" style="margin-bottom:16px">
-  <div class="card-header"><span class="card-title">📖 Legenda de siglas</span></div>
-  <div class="card-body">
-    <p style="font-size:12px;color:var(--text2);margin-bottom:12px">Nome completo de cada tabela — útil para vendedores que ainda não conhecem as abreviações.</p>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px 16px">
-      ${SIGLA_LEGENDA.map(s => `
-        <div style="display:flex;gap:8px;align-items:baseline;font-size:12px;padding:4px 0;border-bottom:1px solid var(--line)">
-          <span class="chip" style="font-family:var(--mono);font-weight:700;min-width:48px;text-align:center">${s.sigla}</span>
-          <span style="color:var(--text2)">${s.nome}</span>
-        </div>`).join('')}
-    </div>
-  </div>
-</div>
-
-<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px">Tabelas dos vendedores comuns</div>
-
-<div class="card" style="margin-bottom:20px;border-top:2px solid var(--text2)">
-  <div class="card-header">
-    <span class="card-title">📋 TABELAS MODELO FIXO</span>
-    <span class="chip">${tabsFixo.length} tabela(s)</span>
-  </div>
-  <div class="card-body" style="padding:16px">
-    ${cardsFixo || `<div class="empty-state" style="padding:24px"><div class="empty-sub">Nenhuma tabela neste modelo com o filtro atual</div></div>`}
-  </div>
-</div>
-
-<div class="card" style="margin-bottom:20px;border-top:2px solid var(--blue)">
-  <div class="card-header" style="background:var(--blue-dim)">
-    <span class="card-title">💼 TABELAS MODELO PJ</span>
-    <span class="chip">${tabsPJ.length} tabela(s)</span>
-  </div>
-  <div class="card-body" style="padding:16px">
-    ${tabsPJ.length > 0
-      ? cardsPJ
-      : `<div class="empty-state" style="padding:24px"><div class="empty-sub">${isG ? 'Nenhuma tabela PJ cadastrada (ids terminados em _R)' : 'Você não tem acesso a tabelas deste modelo'}</div></div>`}
-  </div>
-</div>
+${cardsLista || `<div class="empty-state"><div class="empty-sub">Nenhuma tabela com o filtro atual</div></div>`}
 
 <div class="card" style="margin-top:20px">
   <div class="card-header"><span class="card-title">Regras de estorno</span></div>
@@ -4772,6 +4829,36 @@ function getPctGestor(tabId) {
   const regra = DB.tabelasComissaoGerencia.find(g => g.tabela_id === tabId);
   if (!regra) return 0;
   return regra.semSupervisor.reduce((a, p) => a + p, 0);
+}
+
+// NOVO: comissão do SUPERVISOR (líder de equipe) sobre as vendas da sua
+// equipe — sempre usa a coluna comSupervisor (mesma % que o gerente recebe
+// nesse cenário, mas paga separadamente pra cada um).
+function calcComissaoSupervisorMes(supervisorId, mes) {
+  const itens = [];
+  const idsEquipe = DB.vendedores.filter(v => v.liderId === supervisorId).map(v => v.id);
+  DB.vendas.forEach(v => {
+    if (v.status === 'cancelado') return;
+    if (!idsEquipe.includes(v.vendedor)) return;
+    const regra = DB.tabelasComissaoGerencia.find(g => g.tabela_id === v.tabela);
+    if (!regra) return;
+    const tab = DB.tabelas.find(t => t.id === v.tabela);
+
+    calcParcelas(v).forEach((p, i) => {
+      if (!p.ativa || p.n > 3) return;
+      if (p.mesRecebimento !== mes) return;
+      const statusParcCliente = v.parcelas[i]?.s;
+      if (p.n > 1 && statusParcCliente !== 'pago') return;
+      const pct = regra.comSupervisor[p.n - 1];
+      if (!pct) return;
+      itens.push({
+        cliente: v.cliente, contrato: v.contrato, vendedor: v.vendedor,
+        tabela: v.tabela, tabelaNome: tab?.nome || v.tabela, n: p.n,
+        valor: v.valor * pct / 100, pct,
+      });
+    });
+  });
+  return itens;
 }
 
 function calcRemuneracaoMes(mes) {
@@ -6399,6 +6486,88 @@ ${mesNav}
       </div>
     </div>
   </div>
+</div>
+`;
+}
+
+function renderComissaoSupervisorBrusque() {
+  const u = AppState.user;
+  const isG = (u.role === 'gestor' || u.role === 'adm');
+  const isSup = u.role === 'supervisor';
+  if (!isG && !isSup) return `<div class="page-header"><div class="page-title">Acesso restrito</div></div>`;
+
+  const st = AppState.modulo.comissaoSupervisor;
+  const supervisores = DB.vendedores.filter(v => DB.vendedores.some(x => x.liderId === v.id));
+  if (isG && (!st.supervisorId || !supervisores.some(s => s.id === st.supervisorId))) {
+    st.supervisorId = supervisores[0]?.id || null;
+  }
+  const supervisorId = isG ? st.supervisorId : u.id;
+  const supervisor = DB.vendedores.find(v => v.id === supervisorId);
+
+  if (isG && supervisores.length === 0) {
+    return `<div class="page-header"><div><div class="page-title">Comissão Supervisor</div><div class="page-sub">// nenhum líder de equipe cadastrado ainda</div></div></div>
+    <div class="card"><div class="card-body" style="text-align:center;padding:40px;color:var(--text3)">Nenhum vendedor tem equipe abaixo dele ainda. Promova alguém a líder de equipe na tela Vendedores.</div></div>`;
+  }
+
+  const mesesSet = new Set();
+  DB.vendas.forEach(v => { if (v.status !== 'cancelado') calcParcelas(v).forEach(p => { if (p.ativa) mesesSet.add(p.mesRecebimento); }); });
+  const mesesDisp = [...mesesSet].sort();
+  if (!mesesDisp.includes(todayMes())) mesesDisp.push(todayMes());
+  mesesDisp.sort();
+  if (!st.mesSel || !mesesDisp.includes(st.mesSel)) st.mesSel = mesesDisp[mesesDisp.length-1] || todayMes();
+
+  const itens = calcComissaoSupervisorMes(supervisorId, st.mesSel);
+  const total = itens.reduce((a,i) => a+i.valor, 0);
+  const idsEquipe = DB.vendedores.filter(v => v.liderId === supervisorId).map(v => v.id);
+  const equipe = DB.vendedores.filter(v => idsEquipe.includes(v.id));
+
+  const seletorSupervisor = isG && supervisores.length > 1 ? `
+    <div class="tabs" style="margin-bottom:14px">
+      ${supervisores.map(s => `<div class="tab ${s.id===supervisorId?'active':''}" onclick="AppState.modulo.comissaoSupervisor.supervisorId='${s.id}';rerenderModule('comissaoSupervisor')">${s.nome}</div>`).join('')}
+    </div>` : '';
+
+  const mesNav = renderMesNav(mesesDisp, st.mesSel, "AppState.modulo.comissaoSupervisor.mesSel", 'comissaoSupervisor');
+
+  const rows = itens.map(i => `<tr>
+    <td>${i.cliente}</td><td>${i.contrato||'—'}</td><td>${i.tabelaNome}</td>
+    <td><span class="chip">${i.n}ª</span></td>
+    <td class="td-mono">${i.pct}%</td>
+    <td class="td-mono td-right">${fmt(i.valor)}</td>
+  </tr>`).join('');
+
+  return `
+<div class="page-header">
+  <div>
+    <div class="page-title">Comissão Supervisor</div>
+    <div class="page-sub">// override sobre a equipe · ${isG ? (supervisor?.nome||'—') : 'minha equipe'} · ${mesLabel(st.mesSel)}</div>
+  </div>
+</div>
+
+${seletorSupervisor}
+${mesNav}
+
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="stat-label">Equipe</div>
+    <div class="stat-value">${equipe.length}</div>
+    <div class="stat-meta">${equipe.map(v=>v.nome.split(' ')[0]).join(', ') || '—'}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Vendas com comissão no mês</div>
+    <div class="stat-value">${itens.length}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Total a receber</div>
+    <div class="stat-value" style="color:var(--brand)">${fmt(total)}</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><span class="card-title">Detalhamento</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Cliente</th><th>Contrato</th><th>Tabela</th><th>Parc.</th><th>%</th><th class="td-right">Valor</th></tr></thead>
+    <tbody>${rows || `<tr><td colspan="6" class="td-center" style="padding:40px;color:var(--text3)">Nenhuma comissão de supervisão neste mês</td></tr>`}</tbody>
+  </table></div>
 </div>
 `;
 }
