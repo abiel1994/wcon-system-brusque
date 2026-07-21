@@ -615,8 +615,7 @@ const Router = {
     if (!this.modules[id]) return;
     AppState.currentModule = id;
 
-    document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-    document.getElementById('nav-' + id)?.classList.add('active');
+    buildSidebar(); // reabre a seção do item clicado (se estava fechada) e marca o ativo
 
     document.querySelectorAll('.module').forEach(m => m.classList.remove('active'));
     const el = document.getElementById('mod-' + id);
@@ -1156,24 +1155,48 @@ function buildSidebar() {
     estornos: DB.vendas.filter(v => v.estorno && !v.estorno.autorizado && (isG ? true : vendasNoEscopo(u).some(x=>x.id===v.id))).length,
   };
 
-  let html = '';
-  const rendered = new Set();
+  // NOVO: seções do menu são colapsáveis — fechadas por padrão, o usuário
+  // pode abrir quantas quiser ao mesmo tempo. A seção da página atual sempre
+  // fica aberta (senão o item ativo desapareceria da tela).
+  if (!AppState.sidebarAbertas) AppState.sidebarAbertas = {};
 
+  const grupos = {};
+  const ordemSecoes = [];
   visibles.forEach(id => {
-    const mod = Router.modules[id];
-    const sec = mod.section;
-    if (!rendered.has(sec)) {
-      rendered.add(sec);
-      html += `<div class="sb-section-label">${sections[sec]}</div>`;
-    }
-    const badge = badges[id] ? `<span class="nav-badge">${badges[id]}</span>` : '';
-    html += `<div class="nav-item" id="nav-${id}" data-tooltip="${mod.label}" onclick="Router.navigate('${id}')">
-      <span class="nav-label">${mod.label}</span>
-      ${badge}
+    const sec = Router.modules[id].section;
+    if (!grupos[sec]) { grupos[sec] = []; ordemSecoes.push(sec); }
+    grupos[sec].push(id);
+  });
+
+  let html = '';
+  ordemSecoes.forEach(sec => {
+    const itens = grupos[sec];
+    const temAtual = itens.includes(AppState.currentModule);
+    const aberta = !!AppState.sidebarAbertas[sec] || temAtual;
+    html += `<div class="sb-section-label" onclick="toggleSecaoMenu('${sec}')" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;user-select:none">
+      <span>${sections[sec]}</span>
+      <span style="font-size:9px;color:var(--text3)">${aberta ? '▾' : '▸'}</span>
     </div>`;
+    html += `<div class="sb-section-items" style="${aberta ? '' : 'display:none'}">`;
+    itens.forEach(id => {
+      const mod = Router.modules[id];
+      const badge = badges[id] ? `<span class="nav-badge">${badges[id]}</span>` : '';
+      const ativo = AppState.currentModule === id ? ' active' : '';
+      html += `<div class="nav-item${ativo}" id="nav-${id}" data-tooltip="${mod.label}" onclick="Router.navigate('${id}')">
+        <span class="nav-label">${mod.label}</span>
+        ${badge}
+      </div>`;
+    });
+    html += `</div>`;
   });
 
   document.getElementById('sidebar-nav').innerHTML = html;
+}
+
+function toggleSecaoMenu(sec) {
+  if (!AppState.sidebarAbertas) AppState.sidebarAbertas = {};
+  AppState.sidebarAbertas[sec] = !AppState.sidebarAbertas[sec];
+  buildSidebar();
 }
 
 function toggleSidebar() {
