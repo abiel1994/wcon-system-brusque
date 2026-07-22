@@ -5947,19 +5947,19 @@ function renderFunil() {
     const proxima = FUNIL_ETAPA_ORDEM[idxAtual+1];
     const origCores = origemCores(lead.origem);
     const corEtapa = FUNIL_CORES_ETAPA[lead.etapa] || { bg: 'var(--ink2)', borda: 'var(--line)' };
-    return `<div class="card" style="padding:8px;margin-bottom:6px;cursor:pointer;background:${corEtapa.bg};border-left:3px solid ${corEtapa.borda}" onclick="verDetalheLeadFunil('${lead.id}')">
-      <div style="font-size:12px;font-weight:600;margin-bottom:2px">${lead.nome}</div>
-      ${isG && !st.filtroVend ? `<div style="font-size:9px;color:var(--text3);margin-bottom:4px">${DB.vendedores.find(v=>v.id===lead.vendedor)?.nome || '—'}</div>` : ''}
+    return `<div style="background:#fff;border-radius:8px;padding:10px;margin-bottom:8px;cursor:pointer;border-left:4px solid ${corEtapa.borda};box-shadow:0 1px 3px rgba(0,0,0,0.06)" onclick="verDetalheLeadFunil('${lead.id}')">
+      <div style="font-size:13px;font-weight:700;color:#1A1D24;margin-bottom:2px">${lead.nome}</div>
+      ${isG && !st.filtroVend ? `<div style="font-size:10px;color:var(--text3);margin-bottom:6px">${DB.vendedores.find(v=>v.id===lead.vendedor)?.nome || '—'}</div>` : ''}
       <span class="chip" style="background:${origCores.bg};color:${origCores.cor};font-size:9px">${origemLabel(lead.origem)}</span>
-      ${lead.valorCredito ? `<div style="font-size:10px;font-family:var(--mono);color:var(--text2);margin-top:4px">${fmt(lead.valorCredito)}</div>` : ''}
-      ${lead.etapa === 'venda' ? `<div style="font-size:11px;font-family:var(--mono);color:var(--green);margin-top:5px">${fmt(lead.valorVenda)}</div>` : ''}
-      ${lead.etapa === 'contato' ? `<div onclick="event.stopPropagation()" style="display:flex;align-items:center;justify-content:space-between;margin-top:5px;gap:4px">
-        <span style="font-size:9px;font-family:var(--mono);color:${(lead.tentativas||0)>=6?'var(--brand)':'var(--text3)'}">${lead.tentativas||0}/6 tentativas</span>
-        <button class="btn btn-ghost btn-sm" style="padding:1px 6px;font-size:10px" onclick="incrementarTentativaFunil('${lead.id}')">+1</button>
+      ${lead.valorCredito ? `<div style="font-size:16px;font-weight:800;font-family:var(--mono);color:#1A1D24;margin-top:8px">${fmt(lead.valorCredito)}</div>` : ''}
+      ${lead.etapa === 'venda' ? `<div style="font-size:15px;font-weight:800;font-family:var(--mono);color:#27500A;margin-top:6px">${fmt(lead.valorVenda)}</div>` : ''}
+      ${lead.etapa === 'contato' ? `<div onclick="event.stopPropagation()" style="display:flex;align-items:center;justify-content:space-between;margin-top:9px;padding-top:9px;border-top:1px solid #F0F2F5;gap:4px">
+        <span style="font-size:11px;font-family:var(--mono);font-weight:700;color:${(lead.tentativas||0)>=6?'var(--brand)':'#9CA3AF'}">${lead.tentativas||0}/6 tentativas</span>
+        <button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:11px" onclick="incrementarTentativaFunil('${lead.id}')">+1</button>
       </div>` : ''}
-      ${proxima ? `<div onclick="event.stopPropagation()" style="display:flex;gap:4px;margin-top:6px">
-        <button class="btn btn-ghost btn-sm" style="flex:1;font-size:10px;padding:3px" onclick="moverEtapaFunil('${lead.id}','${proxima}')">→ ${FUNIL_ETAPAS.find(e=>e.key===proxima)?.label}</button>
-        <button class="btn btn-ghost btn-sm" style="color:var(--brand);font-size:10px;padding:3px 6px" onclick="marcarPerdidoFunil('${lead.id}')">✕</button>
+      ${proxima ? `<div onclick="event.stopPropagation()" style="display:flex;gap:5px;margin-top:9px">
+        <button class="btn btn-ghost btn-sm" style="flex:1;font-size:11px;padding:6px" onclick="moverEtapaFunil('${lead.id}','${proxima}')">→ ${FUNIL_ETAPAS.find(e=>e.key===proxima)?.label}</button>
+        <button class="btn btn-ghost btn-sm" style="color:var(--brand);font-size:11px;padding:6px 9px" onclick="marcarPerdidoFunil('${lead.id}')">✕</button>
       </div>` : ''}
     </div>`;
   }
@@ -5980,12 +5980,15 @@ function renderFunil() {
       }
     }
 
-    return `<div style="background:${corEtapa.bg};border:1px solid ${corEtapa.borda}40;border-radius:8px;padding:8px;min-width:150px;flex-shrink:0">
-      <div onclick="${leads.length===0 ? `AppState.modulo.funil.colunasAbertas['${etapaKey}']=false;rerenderModule('funil')` : ''}" style="margin-bottom:8px;${leads.length===0?'cursor:pointer':''}">
-        <div style="font-size:10px;font-weight:700;color:var(--text);display:flex;justify-content:space-between">
-          <span>${label}</span><span style="font-family:var(--mono);color:var(--text3)">${leads.length}${leads.length===0?' ▴':''}</span>
+    return `<div style="background:${corEtapa.bg};border:1px solid ${corEtapa.borda}40;border-radius:10px;padding:10px;min-width:200px;flex-shrink:0">
+      <div style="background:#fff;border-bottom:2px solid ${corEtapa.borda};border-radius:8px 8px 0 0;padding:12px 14px;margin:-10px -10px 10px">
+        <div onclick="${leads.length===0 ? `AppState.modulo.funil.colunasAbertas['${etapaKey}']=false;rerenderModule('funil')` : ''}" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;${leads.length===0?'cursor:pointer':''}">
+          <span style="font-size:15px;font-weight:800;color:#1A1D24">${label}</span>
+          <span style="background:${corEtapa.borda};color:#fff;font-size:13px;font-weight:800;font-family:var(--mono);width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;flex-shrink:0">${leads.length}</span>
         </div>
-        <div style="font-size:9px;color:var(--text3);font-family:var(--mono);margin-top:1px">${fmt(valorTotal)}</div>
+        <div style="background:#EAF3DE;border:1px solid #97C459;border-radius:6px;padding:6px 8px;text-align:center">
+          <span style="font-size:15px;font-weight:800;font-family:var(--mono);color:#27500A">${fmt(valorTotal)}</span>
+        </div>
       </div>
       ${leads.map(montarCard).join('') || '<div style="font-size:11px;color:var(--text3);text-align:center;padding:10px 0">—</div>'}
     </div>`;
