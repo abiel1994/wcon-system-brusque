@@ -270,7 +270,7 @@ const AppState = {
     agendaFunil:   { mesCalendario: null, diaSelecionado: null },
     leadsPainel:   { mesSel: null },
     comissaoSupervisor: { mesSel: null, supervisorId: null },
-    comissaoLideranca: { abaAtiva: null },
+    comissaoLideranca: { mesSel: null, selecionado: null },
     clientes:      { search: '' },
     vendedores:    {},
     dashboard:     { rankPeriodo: 'total' },
@@ -6523,8 +6523,6 @@ function renderConteudoComissaoSupervisor(supervisorId) {
   const idsEquipe = DB.vendedores.filter(v => v.liderId === supervisorId).map(v => v.id);
   const equipe = DB.vendedores.filter(v => idsEquipe.includes(v.id));
 
-  const mesNav = renderMesNav(mesesDisp, st.mesSel, "AppState.modulo.comissaoSupervisor.mesSel", 'comissaoLideranca');
-
   const rows = itens.map(i => `<tr>
     <td>${i.cliente}</td><td>${i.contrato||'—'}</td><td>${i.tabelaNome}</td>
     <td><span class="chip">${i.n}ª</span></td>
@@ -6533,11 +6531,12 @@ function renderConteudoComissaoSupervisor(supervisorId) {
   </tr>`).join('');
 
   return `
-<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px">
-  Override sobre a equipe de ${supervisor.nome}
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+  <div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1.5px;text-transform:uppercase">
+    Override sobre a equipe de ${supervisor.nome}
+  </div>
+  ${itens.length > 0 ? `<button class="btn btn-ghost btn-sm" onclick="verDemonstrativoSupervisorLideranca('${supervisorId}','${st.mesSel}')">👁 Demonstrativo</button>` : ''}
 </div>
-
-${mesNav}
 
 <div class="stats-grid">
   <div class="stat-card">
@@ -6562,7 +6561,85 @@ ${mesNav}
     <tbody>${rows || `<tr><td colspan="6" class="td-center" style="padding:40px;color:var(--text3)">Nenhuma comissão de supervisão neste mês</td></tr>`}</tbody>
   </table></div>
 </div>
+
+<div class="overlay" id="m-demo-sup">
+  <div class="modal" style="width:620px">
+    <button class="modal-close no-print" onclick="closeModal('m-demo-sup')">✕</button>
+    <div class="modal-title" id="mds-title">Demonstrativo — Supervisão</div>
+    <div class="modal-sub" id="mds-sub"></div>
+    <div id="mds-body"></div>
+    <div class="modal-actions no-print">
+      <button class="btn btn-ghost" onclick="closeModal('m-demo-sup')">Fechar</button>
+      <button class="btn btn-ghost" onclick="window.print()">🖨 Imprimir</button>
+    </div>
+  </div>
+</div>
 `;
+}
+
+function verDemonstrativoSupervisorLideranca(supervisorId, mes) {
+  const supervisor = DB.vendedores.find(v => v.id === supervisorId);
+  if (!supervisor) return;
+  const itens = calcComissaoSupervisorMes(supervisorId, mes);
+  const total = itens.reduce((a,i) => a+i.valor, 0);
+
+  document.getElementById('mds-title').textContent = `Demonstrativo — Supervisão · ${mesLabel(mes)}`;
+  document.getElementById('mds-sub').textContent = `Override sobre a equipe de ${supervisor.nome} — base de cálculo`;
+
+  const rows = itens.map(i => `<tr style="border-bottom:1px solid var(--line)">
+    <td style="padding:8px 10px;font-size:12px;font-weight:600">${i.cliente}</td>
+    <td style="padding:8px 10px;font-family:var(--mono);font-size:11px;color:var(--text2)">${i.contrato||'—'}</td>
+    <td style="padding:8px 10px;font-size:11px;color:var(--text2)">${i.tabelaNome}</td>
+    <td style="padding:8px 10px;text-align:center">
+      <span style="font-family:var(--mono);font-size:12px;font-weight:700;color:var(--green);background:var(--green-dim);border:1px solid var(--green-glow);border-radius:5px;padding:2px 8px;white-space:nowrap">${i.n}ª</span>
+    </td>
+    <td style="padding:8px 10px;font-size:11px;color:var(--text2)">${vendorName(i.vendedor).split(' ')[0]}</td>
+    <td style="padding:8px 10px;font-family:var(--mono);font-size:11px;color:var(--text3);text-align:right">${i.pct}%</td>
+    <td style="padding:8px 10px;font-family:var(--mono);font-size:13px;font-weight:700;color:var(--brand);text-align:right">${fmt(i.valor)}</td>
+  </tr>`).join('');
+
+  const totalLinhas = itens.length;
+  document.getElementById('mds-body').classList.toggle('compact-print', totalLinhas > 10);
+
+  document.getElementById('mds-body').innerHTML = `
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:14px 16px;background:var(--ink3);border-radius:10px;border:1px solid var(--line);margin-bottom:14px">
+    <div style="font-size:11px;color:var(--text3);font-family:var(--mono);line-height:1.8">
+      WCON System · Mundo do Consórcio<br>
+      CNPJ: 00.000.000/0001-00<br>
+      Emissão: ${fmtDate(today())}
+    </div>
+    <div style="text-align:right">
+      <div style="font-size:18px;font-weight:800;color:var(--brand);letter-spacing:-0.5px">DEMONSTRATIVO SUPERVISÃO</div>
+      <div style="font-size:12px;color:var(--text2);font-family:var(--mono);margin-top:2px">${mesLabel(mes)} · ${supervisor.nome}</div>
+    </div>
+  </div>
+
+  <div style="border:1px solid var(--line);border-radius:10px;overflow:hidden">
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr style="background:var(--ink4)">
+            <th style="padding:7px 10px;font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:1.2px;text-align:left">Cliente</th>
+            <th style="padding:7px 10px;font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:1.2px;text-align:left">Contrato</th>
+            <th style="padding:7px 10px;font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:1.2px;text-align:left">Tabela</th>
+            <th style="padding:7px 10px;font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:1.2px;text-align:center">Parcela</th>
+            <th style="padding:7px 10px;font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:1.2px;text-align:left">Vendedor</th>
+            <th style="padding:7px 10px;font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:1.2px;text-align:right">%</th>
+            <th style="padding:7px 10px;font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:1.2px;text-align:right">Comissão</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows}
+          <tr style="background:var(--ink3);border-top:2px solid var(--line2)">
+            <td colspan="6" style="padding:10px;font-size:12px;font-weight:800;color:var(--text);text-transform:uppercase;letter-spacing:1px">Total a receber</td>
+            <td style="padding:10px;font-family:var(--mono);font-size:16px;font-weight:800;color:var(--brand);text-align:right">${fmt(total)}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  `;
+  openModal('m-demo-sup');
 }
 
 function renderComissaoLideranca() {
@@ -6574,29 +6651,56 @@ function renderComissaoLideranca() {
   const st = AppState.modulo.comissaoLideranca;
   const supervisores = DB.vendedores.filter(v => DB.vendedores.some(x => x.liderId === v.id));
 
-  // Monta as abas: WCON (só gestor) + uma por líder de equipe (pelo nome)
-  const abas = [];
-  if (isG) abas.push({ key: 'wcon', label: 'WCON' });
-  if (isG) supervisores.forEach(s => abas.push({ key: 'sup_' + s.id, label: s.nome }));
-  else if (isSup) abas.push({ key: 'sup_' + u.id, label: u.nome });
+  // Mês único, compartilhado entre o resumo e os detalhes
+  const mesesSet = new Set();
+  DB.vendas.forEach(v => { if (v.status !== 'cancelado') calcParcelas(v).forEach(p => { if (p.ativa) mesesSet.add(p.mesRecebimento); }); });
+  const mesesDisp = [...mesesSet].sort();
+  if (!mesesDisp.includes(todayMes())) mesesDisp.push(todayMes());
+  mesesDisp.sort();
+  if (!st.mesSel || !mesesDisp.includes(st.mesSel)) st.mesSel = mesesDisp[mesesDisp.length - 1] || todayMes();
 
-  if (!st.abaAtiva || !abas.some(a => a.key === st.abaAtiva)) {
-    st.abaAtiva = abas[0]?.key || 'wcon';
+  // Sincroniza o mesmo mês nas telas internas de detalhe (WCON / Supervisor)
+  AppState.modulo.remuneracao.mesSel = st.mesSel;
+  AppState.modulo.comissaoSupervisor.mesSel = st.mesSel;
+
+  const mesNav = renderMesNav(mesesDisp, st.mesSel, "AppState.modulo.comissaoLideranca.mesSel", 'comissaoLideranca');
+
+  // Monta os cards do resumo: WCON (só gestor) + um por líder de equipe
+  const cards = [];
+  if (isG) {
+    const { producao, recorrencia } = calcRemuneracaoMes(st.mesSel);
+    const totalWcon = aplicarTravaGestor(st.mesSel, producao, recorrencia).vLiqFinal;
+    cards.push({ key: 'wcon', label: 'WCON (Gestor)', total: totalWcon, meta: `${producao.length + recorrencia.length} contrato(s) com comissão` });
+  }
+  const listaSup = isG ? supervisores : supervisores.filter(s => s.id === u.id);
+  listaSup.forEach(s => {
+    const itens = calcComissaoSupervisorMes(s.id, st.mesSel);
+    const total = itens.reduce((a, i) => a + i.valor, 0);
+    const equipe = DB.vendedores.filter(v => v.liderId === s.id).map(v => v.nome.split(' ')[0]).join(', ');
+    cards.push({ key: 'sup_' + s.id, label: `${s.nome} (Supervisão)`, total, meta: `${itens.length} contrato(s) · equipe: ${equipe || '—'}` });
+  });
+
+  if (!st.selecionado || !cards.some(c => c.key === st.selecionado)) {
+    st.selecionado = cards[0]?.key || null;
   }
 
-  const tabsHtml = abas.length > 1 ? `
-    <div class="tabs" style="margin-bottom:16px">
-      ${abas.map(a => `<div class="tab ${st.abaAtiva===a.key?'active':''}" onclick="AppState.modulo.comissaoLideranca.abaAtiva='${a.key}';rerenderModule('comissaoLideranca')">${a.label}</div>`).join('')}
-    </div>` : '';
+  const cardsHtml = cards.map(c => {
+    const ativo = st.selecionado === c.key;
+    return `<div onclick="AppState.modulo.comissaoLideranca.selecionado='${c.key}';rerenderModule('comissaoLideranca')"
+      style="cursor:pointer;position:relative;border-radius:10px;padding:16px;transition:.15s;
+      ${ativo ? 'background:var(--ink1);border:2px solid var(--brand)' : 'background:var(--ink2);border:1px solid var(--line)'}">
+      <div style="font-size:10px;font-weight:700;color:${ativo ? 'var(--brand)' : 'var(--text3)'};letter-spacing:1px;text-transform:uppercase">${c.label}</div>
+      <div style="font-size:22px;font-weight:800;font-family:var(--mono);color:${ativo ? '#fff' : 'var(--text)'};margin-top:6px">${fmt(c.total)}</div>
+      <div style="font-size:10px;color:${ativo ? 'var(--text3)' : 'var(--text3)'};margin-top:4px">${c.meta}</div>
+      <div style="position:absolute;top:14px;right:14px;font-size:16px;color:${ativo ? 'var(--brand)' : 'var(--text3)'}">${ativo ? '▴' : '▾'}</div>
+    </div>`;
+  }).join('');
 
-  let conteudo;
-  if (st.abaAtiva === 'wcon') {
-    conteudo = renderRemuneracao();
-  } else if (isG && supervisores.length === 0) {
-    conteudo = `<div class="card"><div class="card-body" style="text-align:center;padding:40px;color:var(--text3)">Nenhum vendedor tem equipe abaixo dele ainda. Promova alguém a líder de equipe na tela Vendedores.</div></div>`;
-  } else {
-    const supervisorId = st.abaAtiva.replace('sup_', '');
-    conteudo = renderConteudoComissaoSupervisor(supervisorId);
+  let detalhe = '';
+  if (st.selecionado === 'wcon') {
+    detalhe = renderRemuneracao();
+  } else if (st.selecionado) {
+    detalhe = renderConteudoComissaoSupervisor(st.selecionado.replace('sup_', ''));
   }
 
   return `
@@ -6606,8 +6710,15 @@ function renderComissaoLideranca() {
     <div class="page-sub">// override de gerência e supervisão sobre a produção da equipe</div>
   </div>
 </div>
-${tabsHtml}
-${conteudo}
+
+${mesNav}
+
+<div style="font-size:9px;font-weight:700;color:var(--text3);letter-spacing:1.2px;text-transform:uppercase;margin:16px 0 8px">Resumo do mês</div>
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:20px">
+  ${cardsHtml || '<div style="color:var(--text3);font-size:12px;grid-column:1/-1">Nenhum líder de equipe cadastrado ainda.</div>'}
+</div>
+
+${detalhe}
 `;
 }
 
@@ -6757,7 +6868,9 @@ function abrirModalNovoLeadFunil(tipo) {
     ? 'Será atribuído automaticamente pelo rodízio. Só nome e telefone por enquanto.'
     : (isG ? 'Escolha o vendedor. Preencha o que ele conseguiu na ligação.' : 'Atribuído a você. Preencha o que conseguiu na ligação.');
   ['mfn-nome','mfn-email','mfn-celular','mfn-valorcredito','mfn-renda','mfn-parcela','mfn-recurso','mfn-aluguel-valor','mfn-fgts-valor','mfn-profissao','mfn-obs'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-  document.querySelectorAll('#mfn-interesse .chip').forEach(c => c.classList.remove('badge-green'));
+  document.querySelectorAll('#mfn-interesse .chip').forEach(c => {
+    c.style.background = ''; c.style.color = ''; c.style.borderColor = ''; c.style.fontWeight = '';
+  });
   document.getElementById('mfn-decide').value = '';
   document.getElementById('mfn-aluguel').value = 'nao';
   document.getElementById('mfn-fgts').value = 'nao';
@@ -6775,7 +6888,11 @@ function toggleInteresseFunil(valor) {
   const idx = _funilInteresseSel.indexOf(valor);
   if (idx >= 0) _funilInteresseSel.splice(idx, 1); else _funilInteresseSel.push(valor);
   document.querySelectorAll('#mfn-interesse .chip').forEach(c => {
-    c.classList.toggle('badge-green', _funilInteresseSel.includes(c.dataset.val));
+    const selecionado = _funilInteresseSel.includes(c.dataset.val);
+    c.style.background = selecionado ? 'var(--brand)' : '';
+    c.style.color = selecionado ? '#fff' : '';
+    c.style.borderColor = selecionado ? 'var(--brand)' : '';
+    c.style.fontWeight = selecionado ? '700' : '400';
   });
 }
 
