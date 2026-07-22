@@ -270,6 +270,7 @@ const AppState = {
     agendaFunil:   { mesCalendario: null, diaSelecionado: null },
     leadsPainel:   { mesSel: null },
     comissaoSupervisor: { mesSel: null, supervisorId: null },
+    comissaoLideranca: { abaAtiva: null },
     clientes:      { search: '' },
     vendedores:    {},
     dashboard:     { rankPeriodo: 'total' },
@@ -598,9 +599,8 @@ const Router = {
     agendaFunil:   { label: 'Agenda', icon: '', section: 'comercial', render: renderAgendaFunil },
     relatorio:     { label: 'Relatórios',    icon: '▦', section: 'comercial', render: renderRelatorio },
 
-    comissao:      { label: 'Comissões',     icon: '◆', section: 'financeiro', render: renderComissao },
-    comissaoSupervisor: { label: 'Comissão Supervisor', icon: '★', section: 'financeiro', render: renderComissaoSupervisorBrusque },
-    remuneracao:   { label: 'Comissão WCON', icon: '★', section: 'financeiro', render: renderRemuneracao },
+    comissao:      { label: 'Comissões Vendedores', icon: '◆', section: 'financeiro', render: renderComissao },
+    comissaoLideranca: { label: 'Comissão Liderança', icon: '★', section: 'financeiro', render: renderComissaoLideranca },
     inadimplencia: { label: 'Inadimplência', icon: '▲', section: 'financeiro', render: renderInadimplencia },
     estornos:      { label: 'Estornos',      icon: '✕', section: 'financeiro', render: renderEstornos },
 
@@ -1145,9 +1145,9 @@ function buildSidebar() {
   };
 
   const visibles = isG
-    ? ['dashboard','trabalho','vendedores','clientes','funil','agendaFunil','relatorio','comissao','remuneracao','inadimplencia','estornos','painelExecutivo','leadsPainel','tabelas','configuracoes']
+    ? ['dashboard','trabalho','vendedores','clientes','funil','agendaFunil','relatorio','comissao','comissaoLideranca','inadimplencia','estornos','painelExecutivo','leadsPainel','tabelas','configuracoes']
     : isSup
-      ? ['dashboard','trabalho','funil','agendaFunil','relatorio','comissao','comissaoSupervisor','inadimplencia','estornos','tabelas']
+      ? ['dashboard','trabalho','funil','agendaFunil','relatorio','comissao','comissaoLideranca','inadimplencia','estornos','tabelas']
       : ['dashboard','trabalho','funil','agendaFunil','relatorio','comissao','inadimplencia','estornos','tabelas'];
 
   const badges = {
@@ -5090,13 +5090,6 @@ function renderRemuneracao() {
   const semDados = producao.length === 0 && recorrencia.length === 0;
 
   return `
-<div class="page-header">
-  <div>
-    <div class="page-title">Comissão WCON</div>
-    <div class="page-sub">// override sobre produção da equipe · mesma lógica dos vendedores</div>
-  </div>
-</div>
-
 <div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px">
   Produção da equipe — ${mesLabel(st.mesSel)}
 </div>
@@ -5267,7 +5260,7 @@ async function darBaixaMesGestor(mes) {
     f.obs = f.obs || 'Produção da equipe abaixo do mínimo — sem comissão';
   }
   if (!await persistirFechamentoGestor(f)) return;
-  rerenderModule('remuneracao');
+  rerenderModule('comissaoLideranca');
 }
 
 async function fecharMesGestor(mes) {
@@ -5289,7 +5282,7 @@ async function fecharMesGestor(mes) {
     f.status = 'aguardando_nf';
   }
   if (!await persistirFechamentoGestor(f)) return;
-  rerenderModule('remuneracao');
+  rerenderModule('comissaoLideranca');
 }
 
 async function registrarNFGestor(mes) {
@@ -5301,7 +5294,7 @@ async function registrarNFGestor(mes) {
   if (!data) return;
   f.nfNumero = nr; f.dataNF = data; f.status = 'aprovado';
   if (!await persistirFechamentoGestor(f)) return;
-  rerenderModule('remuneracao');
+  rerenderModule('comissaoLideranca');
 }
 
 function abrirPgtoGestor(mes) {
@@ -5333,7 +5326,7 @@ async function confirmarPgtoGestor() {
 
   if (!await persistirFechamentoGestorComValor(f, valorLiquido)) return;
   closeModal('m-pgto-g');
-  rerenderModule('remuneracao');
+  rerenderModule('comissaoLideranca');
 }
 function verDemonstrativoGestor(mes) {
   const { producao, recorrencia } = calcRemuneracaoMes(mes);
@@ -6513,25 +6506,11 @@ ${mesNav}
 `;
 }
 
-function renderComissaoSupervisorBrusque() {
-  const u = AppState.user;
-  const isG = (u.role === 'gestor' || u.role === 'adm');
-  const isSup = u.role === 'supervisor';
-  if (!isG && !isSup) return `<div class="page-header"><div class="page-title">Acesso restrito</div></div>`;
+function renderConteudoComissaoSupervisor(supervisorId) {
+  const supervisor = DB.vendedores.find(v => v.id === supervisorId);
+  if (!supervisor) return `<div class="card"><div class="card-body" style="text-align:center;padding:40px;color:var(--text3)">Líder de equipe não encontrado.</div></div>`;
 
   const st = AppState.modulo.comissaoSupervisor;
-  const supervisores = DB.vendedores.filter(v => DB.vendedores.some(x => x.liderId === v.id));
-  if (isG && (!st.supervisorId || !supervisores.some(s => s.id === st.supervisorId))) {
-    st.supervisorId = supervisores[0]?.id || null;
-  }
-  const supervisorId = isG ? st.supervisorId : u.id;
-  const supervisor = DB.vendedores.find(v => v.id === supervisorId);
-
-  if (isG && supervisores.length === 0) {
-    return `<div class="page-header"><div><div class="page-title">Comissão Supervisor</div><div class="page-sub">// nenhum líder de equipe cadastrado ainda</div></div></div>
-    <div class="card"><div class="card-body" style="text-align:center;padding:40px;color:var(--text3)">Nenhum vendedor tem equipe abaixo dele ainda. Promova alguém a líder de equipe na tela Vendedores.</div></div>`;
-  }
-
   const mesesSet = new Set();
   DB.vendas.forEach(v => { if (v.status !== 'cancelado') calcParcelas(v).forEach(p => { if (p.ativa) mesesSet.add(p.mesRecebimento); }); });
   const mesesDisp = [...mesesSet].sort();
@@ -6544,12 +6523,7 @@ function renderComissaoSupervisorBrusque() {
   const idsEquipe = DB.vendedores.filter(v => v.liderId === supervisorId).map(v => v.id);
   const equipe = DB.vendedores.filter(v => idsEquipe.includes(v.id));
 
-  const seletorSupervisor = isG && supervisores.length > 1 ? `
-    <div class="tabs" style="margin-bottom:14px">
-      ${supervisores.map(s => `<div class="tab ${s.id===supervisorId?'active':''}" onclick="AppState.modulo.comissaoSupervisor.supervisorId='${s.id}';rerenderModule('comissaoSupervisor')">${s.nome}</div>`).join('')}
-    </div>` : '';
-
-  const mesNav = renderMesNav(mesesDisp, st.mesSel, "AppState.modulo.comissaoSupervisor.mesSel", 'comissaoSupervisor');
+  const mesNav = renderMesNav(mesesDisp, st.mesSel, "AppState.modulo.comissaoSupervisor.mesSel", 'comissaoLideranca');
 
   const rows = itens.map(i => `<tr>
     <td>${i.cliente}</td><td>${i.contrato||'—'}</td><td>${i.tabelaNome}</td>
@@ -6559,14 +6533,10 @@ function renderComissaoSupervisorBrusque() {
   </tr>`).join('');
 
   return `
-<div class="page-header">
-  <div>
-    <div class="page-title">Comissão Supervisor</div>
-    <div class="page-sub">// override sobre a equipe · ${isG ? (supervisor?.nome||'—') : 'minha equipe'} · ${mesLabel(st.mesSel)}</div>
-  </div>
+<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px">
+  Override sobre a equipe de ${supervisor.nome}
 </div>
 
-${seletorSupervisor}
 ${mesNav}
 
 <div class="stats-grid">
@@ -6592,6 +6562,52 @@ ${mesNav}
     <tbody>${rows || `<tr><td colspan="6" class="td-center" style="padding:40px;color:var(--text3)">Nenhuma comissão de supervisão neste mês</td></tr>`}</tbody>
   </table></div>
 </div>
+`;
+}
+
+function renderComissaoLideranca() {
+  const u = AppState.user;
+  const isG = (u.role === 'gestor' || u.role === 'adm');
+  const isSup = u.role === 'supervisor';
+  if (!isG && !isSup) return `<div class="page-header"><div class="page-title">Acesso restrito</div></div>`;
+
+  const st = AppState.modulo.comissaoLideranca;
+  const supervisores = DB.vendedores.filter(v => DB.vendedores.some(x => x.liderId === v.id));
+
+  // Monta as abas: WCON (só gestor) + uma por líder de equipe (pelo nome)
+  const abas = [];
+  if (isG) abas.push({ key: 'wcon', label: 'WCON' });
+  if (isG) supervisores.forEach(s => abas.push({ key: 'sup_' + s.id, label: s.nome }));
+  else if (isSup) abas.push({ key: 'sup_' + u.id, label: u.nome });
+
+  if (!st.abaAtiva || !abas.some(a => a.key === st.abaAtiva)) {
+    st.abaAtiva = abas[0]?.key || 'wcon';
+  }
+
+  const tabsHtml = abas.length > 1 ? `
+    <div class="tabs" style="margin-bottom:16px">
+      ${abas.map(a => `<div class="tab ${st.abaAtiva===a.key?'active':''}" onclick="AppState.modulo.comissaoLideranca.abaAtiva='${a.key}';rerenderModule('comissaoLideranca')">${a.label}</div>`).join('')}
+    </div>` : '';
+
+  let conteudo;
+  if (st.abaAtiva === 'wcon') {
+    conteudo = renderRemuneracao();
+  } else if (isG && supervisores.length === 0) {
+    conteudo = `<div class="card"><div class="card-body" style="text-align:center;padding:40px;color:var(--text3)">Nenhum vendedor tem equipe abaixo dele ainda. Promova alguém a líder de equipe na tela Vendedores.</div></div>`;
+  } else {
+    const supervisorId = st.abaAtiva.replace('sup_', '');
+    conteudo = renderConteudoComissaoSupervisor(supervisorId);
+  }
+
+  return `
+<div class="page-header">
+  <div>
+    <div class="page-title">Comissão Liderança</div>
+    <div class="page-sub">// override de gerência e supervisão sobre a produção da equipe</div>
+  </div>
+</div>
+${tabsHtml}
+${conteudo}
 `;
 }
 
