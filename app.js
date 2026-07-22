@@ -27,6 +27,7 @@ const FUNIL_ETAPAS = [
   { key: 'lead',            label: 'Lead' },
   { key: 'contato',         label: 'Contato' },
   { key: 'qualificacao',    label: 'Qualificação' },
+  { key: 'agendamento',     label: 'Agendamento' },
   { key: 'reuniao1',        label: '1ª Reunião' },
   { key: 'reuniao2',        label: '2ª Reunião' },
   { key: 'analisando',      label: 'Analisando' },
@@ -36,6 +37,20 @@ const FUNIL_ETAPAS = [
 ];
 const FUNIL_ETAPA_ORDEM = FUNIL_ETAPAS.map(e => e.key);
 const FUNIL_ETAPA_REUNIAO_META = 'reuniao1';
+const FUNIL_ANUNCIOS = ['YouTube', 'Site', 'Formulário WhatsApp', 'Facebook', 'Instagram'];
+const FUNIL_CORES_ETAPA = {
+  lead:            { bg: '#EFF6FF', borda: '#378ADD' },
+  contato:         { bg: '#FFF8E8', borda: '#EF9F27' },
+  qualificacao:    { bg: '#F3EEFB', borda: '#8B5CF6' },
+  agendamento:     { bg: '#EAF3DE', borda: '#639922' },
+  reuniao1:        { bg: '#E6F1FB', borda: '#0C447C' },
+  reuniao2:        { bg: '#E6F1FB', borda: '#0C447C' },
+  analisando:      { bg: '#FFF8E8', borda: '#BA7517' },
+  aguardPagamento: { bg: '#FFF8E8', borda: '#BA7517' },
+  venda:           { bg: '#EAF3DE', borda: '#27500A' },
+  followup:        { bg: '#F0F2F5', borda: '#9CA3AF' },
+  desqualificado:  { bg: '#FCEBEB', borda: '#C8392B' },
+};
 const FUNIL_INTERESSES = ['Auto', 'Imóvel', 'Moto', 'Serviços', 'Outros'];
 const FUNIL_ORIGENS_PROSPECCAO = ['Tráfego pago', 'Ligação ativa', 'Indicação', 'Redes sociais', 'Porta a porta', 'Outro'];
 const FUNIL_CIDADES = ['Brusque', 'Blumenau', 'Itajaí', 'Outra'];
@@ -266,7 +281,7 @@ const AppState = {
 
     tabelas:       { expandida: null, filterRef: 'all' },
     trabalho:      { vendId: null, filterSit: 'all' },
-    funil:         { filtroVend: null, mesSel: null },
+    funil:         { filtroVend: null, mesSel: null, colunasAbertas: {} },
     agendaFunil:   { mesCalendario: null, diaSelecionado: null },
     leadsPainel:   { mesSel: null },
     comissaoSupervisor: { mesSel: null, supervisorId: null },
@@ -5882,8 +5897,8 @@ function renderFunil() {
   const valorVendasTotal = vendasDoMes.reduce((a,l) => a + (l.valorVenda||0), 0);
   const ticketMedio = totalVendas > 0 ? valorVendasTotal/totalVendas : 0;
 
-  const leadsLigacao = leadsVisiveisMes.filter(l => l.origem === 'ligacao');
-  const leadsPago    = leadsVisiveisMes.filter(l => l.origem === 'pago');
+  const leadsLigacao = leadsVisiveisMes.filter(l => l.origem === 'discadora' || l.origem === 'pessoal');
+  const leadsPago    = leadsVisiveisMes.filter(l => l.origem === 'trafego');
   const vendasPago   = leadsPago.filter(l => l.etapa === 'venda').length;
   const conversaoPagoReal = leadsPago.length > 0 ? (vendasPago/leadsPago.length)*100 : 0;
 
@@ -5916,38 +5931,70 @@ function renderFunil() {
   function colunaLeads(etapaKey) {
     return leadsVisiveisMes.filter(l => l.etapa === etapaKey).sort((a,b) => (b.criadoEm||'').localeCompare(a.criadoEm||''));
   }
-  const leadsPerdidos = leadsVisiveisMes.filter(l => l.etapa === 'desqualificado');
+  if (!st.colunasAbertas) st.colunasAbertas = {};
 
-  const pipelineHtml = FUNIL_ETAPAS.map(et => {
-    const leads = colunaLeads(et.key);
-    return `<div style="background:var(--ink3);border-radius:8px;padding:8px;min-width:150px;flex-shrink:0">
-      <div style="font-size:10px;font-weight:700;color:var(--text2);margin-bottom:8px;display:flex;justify-content:space-between">
-        <span>${et.label}</span><span style="font-family:var(--mono);color:var(--text3)">${leads.length}</span>
-      </div>
-      ${leads.map(lead => {
-        const idxAtual = FUNIL_ETAPA_ORDEM.indexOf(lead.etapa);
-        const proxima = FUNIL_ETAPA_ORDEM[idxAtual+1];
-        const origBg = lead.origem === 'pago' ? '#E6F1FB' : 'var(--ink4)';
-        const origCor = lead.origem === 'pago' ? '#0C447C' : 'var(--text2)';
-        const origLabel = lead.origem === 'pago' ? 'Tráfego pago' : 'Ligação';
-        return `<div class="card" style="padding:8px;margin-bottom:6px;cursor:pointer" onclick="verDetalheLeadFunil('${lead.id}')">
-          <div style="font-size:12px;font-weight:600;margin-bottom:2px">${lead.nome}</div>
-          ${isG && !st.filtroVend ? `<div style="font-size:9px;color:var(--text3);margin-bottom:4px">${DB.vendedores.find(v=>v.id===lead.vendedor)?.nome || '—'}</div>` : ''}
-          <span class="chip" style="background:${origBg};color:${origCor};font-size:9px">${origLabel}</span>
-          ${lead.valorCredito ? `<div style="font-size:10px;font-family:var(--mono);color:var(--text2);margin-top:4px">${fmt(lead.valorCredito)}</div>` : ''}
-          ${lead.etapa === 'venda' ? `<div style="font-size:11px;font-family:var(--mono);color:var(--green);margin-top:5px">${fmt(lead.valorVenda)}</div>` : ''}
-          ${lead.etapa === 'contato' ? `<div onclick="event.stopPropagation()" style="display:flex;align-items:center;justify-content:space-between;margin-top:5px;gap:4px">
-            <span style="font-size:9px;font-family:var(--mono);color:${(lead.tentativas||0)>=6?'var(--brand)':'var(--text3)'}">${lead.tentativas||0}/6 tentativas</span>
-            <button class="btn btn-ghost btn-sm" style="padding:1px 6px;font-size:10px" onclick="incrementarTentativaFunil('${lead.id}')">+1</button>
-          </div>` : ''}
-          ${proxima ? `<div onclick="event.stopPropagation()" style="display:flex;gap:4px;margin-top:6px">
-            <button class="btn btn-ghost btn-sm" style="flex:1;font-size:10px;padding:3px" onclick="moverEtapaFunil('${lead.id}','${proxima}')">→ ${FUNIL_ETAPAS.find(e=>e.key===proxima)?.label}</button>
-            <button class="btn btn-ghost btn-sm" style="color:var(--brand);font-size:10px;padding:3px 6px" onclick="marcarPerdidoFunil('${lead.id}')">✕</button>
-          </div>` : ''}
-        </div>`;
-      }).join('') || '<div style="font-size:11px;color:var(--text3);text-align:center;padding:10px 0">—</div>'}
+  function origemLabel(origem) {
+    if (origem === 'trafego') return 'Tráfego';
+    if (origem === 'pessoal') return 'Pessoal';
+    return 'Discadora/IA';
+  }
+  function origemCores(origem) {
+    if (origem === 'trafego') return { bg:'#E6F1FB', cor:'#0C447C' };
+    if (origem === 'pessoal') return { bg:'#F3EEFB', cor:'#5B21B6' };
+    return { bg:'var(--ink4)', cor:'var(--text2)' };
+  }
+
+  function montarCard(lead) {
+    const idxAtual = FUNIL_ETAPA_ORDEM.indexOf(lead.etapa);
+    const proxima = FUNIL_ETAPA_ORDEM[idxAtual+1];
+    const origCores = origemCores(lead.origem);
+    const corEtapa = FUNIL_CORES_ETAPA[lead.etapa] || { borda: 'var(--line)' };
+    return `<div class="card" style="padding:8px;margin-bottom:6px;cursor:pointer;border-left:3px solid ${corEtapa.borda}" onclick="verDetalheLeadFunil('${lead.id}')">
+      <div style="font-size:12px;font-weight:600;margin-bottom:2px">${lead.nome}</div>
+      ${isG && !st.filtroVend ? `<div style="font-size:9px;color:var(--text3);margin-bottom:4px">${DB.vendedores.find(v=>v.id===lead.vendedor)?.nome || '—'}</div>` : ''}
+      <span class="chip" style="background:${origCores.bg};color:${origCores.cor};font-size:9px">${origemLabel(lead.origem)}</span>
+      ${lead.valorCredito ? `<div style="font-size:10px;font-family:var(--mono);color:var(--text2);margin-top:4px">${fmt(lead.valorCredito)}</div>` : ''}
+      ${lead.etapa === 'venda' ? `<div style="font-size:11px;font-family:var(--mono);color:var(--green);margin-top:5px">${fmt(lead.valorVenda)}</div>` : ''}
+      ${lead.etapa === 'contato' ? `<div onclick="event.stopPropagation()" style="display:flex;align-items:center;justify-content:space-between;margin-top:5px;gap:4px">
+        <span style="font-size:9px;font-family:var(--mono);color:${(lead.tentativas||0)>=6?'var(--brand)':'var(--text3)'}">${lead.tentativas||0}/6 tentativas</span>
+        <button class="btn btn-ghost btn-sm" style="padding:1px 6px;font-size:10px" onclick="incrementarTentativaFunil('${lead.id}')">+1</button>
+      </div>` : ''}
+      ${proxima ? `<div onclick="event.stopPropagation()" style="display:flex;gap:4px;margin-top:6px">
+        <button class="btn btn-ghost btn-sm" style="flex:1;font-size:10px;padding:3px" onclick="moverEtapaFunil('${lead.id}','${proxima}')">→ ${FUNIL_ETAPAS.find(e=>e.key===proxima)?.label}</button>
+        <button class="btn btn-ghost btn-sm" style="color:var(--brand);font-size:10px;padding:3px 6px" onclick="marcarPerdidoFunil('${lead.id}')">✕</button>
+      </div>` : ''}
     </div>`;
-  }).join('');
+  }
+
+  function montarColuna(etapaKey, label, leads) {
+    const corEtapa = FUNIL_CORES_ETAPA[etapaKey] || { bg: 'var(--ink3)', borda: 'var(--line)' };
+    const valorTotal = etapaKey === 'venda'
+      ? leads.reduce((a,l) => a + (l.valorVenda||0), 0)
+      : leads.reduce((a,l) => a + (l.valorCredito||0), 0);
+
+    if (leads.length === 0) {
+      const aberta = !!st.colunasAbertas[etapaKey];
+      if (!aberta) {
+        return `<div onclick="AppState.modulo.funil.colunasAbertas['${etapaKey}']=true;rerenderModule('funil')" style="background:var(--ink4);border:1px dashed var(--line2);border-radius:8px;padding:8px 4px;min-width:34px;max-width:34px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;cursor:pointer" title="${label} · 0 leads — clique pra abrir">
+          <div style="font-size:9px;font-weight:700;color:var(--text3);writing-mode:vertical-rl;text-orientation:mixed;margin-top:6px;white-space:nowrap">${label}</div>
+          <div style="font-size:9px;color:var(--text3);margin-top:6px;font-family:var(--mono)">0</div>
+        </div>`;
+      }
+    }
+
+    return `<div style="background:${corEtapa.bg};border:1px solid ${corEtapa.borda}40;border-radius:8px;padding:8px;min-width:150px;flex-shrink:0">
+      <div onclick="${leads.length===0 ? `AppState.modulo.funil.colunasAbertas['${etapaKey}']=false;rerenderModule('funil')` : ''}" style="margin-bottom:8px;${leads.length===0?'cursor:pointer':''}">
+        <div style="font-size:10px;font-weight:700;color:var(--text);display:flex;justify-content:space-between">
+          <span>${label}</span><span style="font-family:var(--mono);color:var(--text3)">${leads.length}${leads.length===0?' ▴':''}</span>
+        </div>
+        <div style="font-size:9px;color:var(--text3);font-family:var(--mono);margin-top:1px">${fmt(valorTotal)}</div>
+      </div>
+      ${leads.map(montarCard).join('') || '<div style="font-size:11px;color:var(--text3);text-align:center;padding:10px 0">—</div>'}
+    </div>`;
+  }
+
+  const pipelineHtml = FUNIL_ETAPAS.map(et => montarColuna(et.key, et.label, colunaLeads(et.key))).join('')
+    + montarColuna('desqualificado', 'Desqualificado', colunaLeads('desqualificado'));
 
   return `
 <div class="page-header">
@@ -5956,8 +6003,7 @@ function renderFunil() {
     <div class="page-sub">// pipeline de leads · ${mesLabel(st.mesSel)}</div>
   </div>
   <div class="page-actions">
-    <button class="btn btn-primary btn-sm" onclick="abrirModalNovoLeadFunil('pago')">+ Lead tráfego pago</button>
-    <button class="btn btn-ghost btn-sm" onclick="abrirModalNovoLeadFunil('ligacao')">+ Lead da ligação</button>
+    <button class="btn btn-primary btn-sm" onclick="abrirModalNovoLeadFunil()">+ Novo Lead</button>
   </div>
 </div>
 
@@ -6041,7 +6087,6 @@ ${!isG ? `
 <div class="form-divider" style="margin:20px 0 10px">Pipeline</div>
 <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:8px">${pipelineHtml}</div>
 
-${leadsPerdidos.length>0 ? `<div style="margin-top:10px;font-size:11px;color:var(--text3)">${leadsPerdidos.length} lead(s) desqualificado(s) este mês</div>` : ''}
 
 ${renderModaisFunil()}
 `;
@@ -6101,7 +6146,7 @@ function renderPainelExecutivoFunil() {
   const metaVendasEquipe = FUNIL_META.vendas * Math.max(DB.vendedores.length, 1);
   const metaAtingidaPct = Math.min((totalVendasMes/metaVendasEquipe)*100, 999);
 
-  const funilCaptacao = ['lead','contato','qualificacao','reuniao1'].map(k => ({
+  const funilCaptacao = ['lead','contato','qualificacao','agendamento','reuniao1'].map(k => ({
     key: k, label: FUNIL_ETAPAS.find(e => e.key === k).label, qtd: emEtapaOuDepoisFunil(leads, k),
   }));
   const funilFechamento = ['reuniao2','analisando','aguardPagamento','venda'].map(k => ({
@@ -6458,8 +6503,9 @@ function renderLeadsPainelFunil() {
   const semResposta    = leadsDoMes.filter(l => l.etapa === 'contato' && (l.tentativas||0) >= 6).length;
   const followup       = leadsDoMes.filter(l => l.etapa === 'followup').length;
   const redistribuidos = leadsDoMes.filter(l => (l.vezesRedistribuido||0) > 0).length;
-  const leadsPago      = leadsDoMes.filter(l => l.origem === 'pago').length;
-  const leadsLigacao   = leadsDoMes.filter(l => l.origem === 'ligacao').length;
+  const leadsPago      = leadsDoMes.filter(l => l.origem === 'trafego').length;
+  const leadsDiscadora = leadsDoMes.filter(l => l.origem === 'discadora').length;
+  const leadsPessoal   = leadsDoMes.filter(l => l.origem === 'pessoal').length;
 
   const cards = [
     ['Recebidos', recebidos, 'var(--text)'],
@@ -6494,11 +6540,15 @@ ${mesNav}
     <div style="display:flex;gap:10px">
       <div style="flex:1;background:#E6F1FB;border-radius:6px;padding:10px;text-align:center">
         <div style="font-size:16px;font-weight:600;font-family:var(--mono);color:#0C447C">${leadsPago}</div>
-        <div style="font-size:10px;color:#0C447C">Tráfego pago</div>
+        <div style="font-size:10px;color:#0C447C">Tráfego</div>
       </div>
       <div style="flex:1;background:var(--ink3);border-radius:6px;padding:10px;text-align:center">
-        <div style="font-size:16px;font-weight:600;font-family:var(--mono);color:var(--text2)">${leadsLigacao}</div>
-        <div style="font-size:10px;color:var(--text2)">Gerados por nós (ligação)</div>
+        <div style="font-size:16px;font-weight:600;font-family:var(--mono);color:var(--text2)">${leadsDiscadora}</div>
+        <div style="font-size:10px;color:var(--text2)">Discadora/IA</div>
+      </div>
+      <div style="flex:1;background:#F3EEFB;border-radius:6px;padding:10px;text-align:center">
+        <div style="font-size:16px;font-weight:600;font-family:var(--mono);color:#5B21B6">${leadsPessoal}</div>
+        <div style="font-size:10px;color:#5B21B6">Pessoal</div>
       </div>
     </div>
   </div>
@@ -6727,13 +6777,29 @@ function renderModaisFunil() {
 <div class="overlay" id="m-funil-novo">
   <div class="modal" style="max-width:560px">
     <button class="modal-close" onclick="closeModal('m-funil-novo')">✕</button>
-    <div class="modal-title" id="mfn-title">Novo lead</div>
+    <div class="modal-title">Novo lead</div>
+
+    <div class="tabs" style="margin-bottom:14px">
+      <div class="tab active" id="mfn-tab-trafego" onclick="trocarAbaLeadFunil('trafego')">Tráfego</div>
+      <div class="tab" id="mfn-tab-discadora" onclick="trocarAbaLeadFunil('discadora')">Discadora/IA</div>
+      <div class="tab" id="mfn-tab-pessoal" onclick="trocarAbaLeadFunil('pessoal')">Pessoal</div>
+    </div>
+
     <div class="modal-sub" id="mfn-sub"></div>
     <div class="form-row cols-2">
       <div class="form-group"><label>Nome *</label><input id="mfn-nome" placeholder="Nome do lead"></div>
       <div class="form-group"><label>E-mail</label><input id="mfn-email" placeholder="email@exemplo.com"></div>
     </div>
     <div class="form-group"><label>Celular</label><input id="mfn-celular" placeholder="(00) 00000-0000"></div>
+
+    <div id="mfn-campos-trafego" style="display:block">
+      <div class="form-group"><label>Qual anúncio veio</label>
+        <div id="mfn-anuncio" style="display:flex;gap:6px;flex-wrap:wrap">
+          ${FUNIL_ANUNCIOS.map(op => `<span class="chip" data-val="${op}" onclick="selecionarAnuncioFunil('${op}')" style="cursor:pointer">${op}</span>`).join('')}
+        </div>
+      </div>
+    </div>
+
     <div id="mfn-campos-ligacao" style="display:none">
       <div id="mfn-vendedor-wrap" class="form-group" style="display:none">
         <label>Vendedor</label>
@@ -6789,7 +6855,7 @@ function renderModaisFunil() {
         </div>
         <div class="form-group"><label>Profissão</label><input id="mfn-profissao" placeholder="Profissão"></div>
       </div>
-      <div class="form-group"><label>Histórico / Observação</label><textarea id="mfn-obs" placeholder="Anotações sobre a ligação..."></textarea></div>
+      <div class="form-group"><label>Histórico / Observação</label><textarea id="mfn-obs" placeholder="Anotações sobre a conversa..."></textarea></div>
     </div>
     <div id="mfn-erro" class="alert alert-red" style="display:none"></div>
     <div class="modal-actions">
@@ -6854,21 +6920,17 @@ function renderModaisFunil() {
 </div>`;
 }
 
-let _funilLeadTipo = null;
+let _funilLeadTipo = 'trafego';
 let _funilInteresseSel = [];
+let _funilAnuncioSel = '';
 let _funilLeadPerfilTarget = null;
 let _funilLeadVendaTarget = null;
 
-function abrirModalNovoLeadFunil(tipo) {
-  _funilLeadTipo = tipo;
+function abrirModalNovoLeadFunil() {
   _funilInteresseSel = [];
-  const isG = (AppState.user.role === 'gestor' || AppState.user.role === 'adm');
-  document.getElementById('mfn-title').textContent = tipo === 'pago' ? 'Novo lead — Tráfego pago' : 'Novo lead — Ligação';
-  document.getElementById('mfn-sub').textContent = tipo === 'pago'
-    ? 'Será atribuído automaticamente pelo rodízio. Só nome e telefone por enquanto.'
-    : (isG ? 'Escolha o vendedor. Preencha o que ele conseguiu na ligação.' : 'Atribuído a você. Preencha o que conseguiu na ligação.');
+  _funilAnuncioSel = '';
   ['mfn-nome','mfn-email','mfn-celular','mfn-valorcredito','mfn-renda','mfn-parcela','mfn-recurso','mfn-aluguel-valor','mfn-fgts-valor','mfn-profissao','mfn-obs'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-  document.querySelectorAll('#mfn-interesse .chip').forEach(c => {
+  document.querySelectorAll('#mfn-interesse .chip, #mfn-anuncio .chip').forEach(c => {
     c.style.background = ''; c.style.color = ''; c.style.borderColor = ''; c.style.fontWeight = '';
   });
   document.getElementById('mfn-decide').value = '';
@@ -6878,10 +6940,36 @@ function abrirModalNovoLeadFunil(tipo) {
   document.getElementById('mfn-origemprosp').value = '';
   document.getElementById('mfn-aluguel-valor').style.display = 'none';
   document.getElementById('mfn-fgts-valor').style.display = 'none';
-  document.getElementById('mfn-campos-ligacao').style.display = tipo === 'ligacao' ? 'block' : 'none';
-  document.getElementById('mfn-vendedor-wrap').style.display = (tipo === 'ligacao' && isG) ? 'block' : 'none';
   document.getElementById('mfn-erro').style.display = 'none';
+  trocarAbaLeadFunil('trafego');
   openModal('m-funil-novo');
+}
+
+function trocarAbaLeadFunil(tipo) {
+  _funilLeadTipo = tipo;
+  const isG = (AppState.user.role === 'gestor' || AppState.user.role === 'adm');
+  ['trafego','discadora','pessoal'].forEach(t => {
+    document.getElementById('mfn-tab-' + t)?.classList.toggle('active', t === tipo);
+  });
+  document.getElementById('mfn-campos-trafego').style.display = tipo === 'trafego' ? 'block' : 'none';
+  document.getElementById('mfn-campos-ligacao').style.display = tipo !== 'trafego' ? 'block' : 'none';
+  document.getElementById('mfn-vendedor-wrap').style.display = (tipo !== 'trafego' && isG) ? 'block' : 'none';
+  document.getElementById('mfn-sub').textContent = tipo === 'trafego'
+    ? 'Será atribuído automaticamente pelo rodízio. Nome, contato e qual anúncio trouxe o lead.'
+    : tipo === 'discadora'
+      ? (isG ? 'Escolha o vendedor. Preencha o que ele conseguiu com o lead vindo da discadora/IA.' : 'Atribuído a você. Preencha o que conseguiu com o lead vindo da discadora/IA.')
+      : (isG ? 'Escolha o vendedor. Lead trazido pessoalmente (rede/indicação).' : 'Atribuído a você. Lead trazido pessoalmente (rede/indicação).');
+}
+
+function selecionarAnuncioFunil(valor) {
+  _funilAnuncioSel = valor;
+  document.querySelectorAll('#mfn-anuncio .chip').forEach(c => {
+    const sel = c.dataset.val === valor;
+    c.style.background = sel ? 'var(--brand)' : '';
+    c.style.color = sel ? '#fff' : '';
+    c.style.borderColor = sel ? 'var(--brand)' : '';
+    c.style.fontWeight = sel ? '700' : '400';
+  });
 }
 
 function toggleInteresseFunil(valor) {
@@ -6908,10 +6996,10 @@ async function salvarNovoLeadFunil() {
   };
 
   let payload;
-  if (_funilLeadTipo === 'pago') {
+  if (_funilLeadTipo === 'trafego') {
     const { vendedorId, idx } = proximoDoRodizioFunil();
     if (!vendedorId) { Dialog.alert('Sem vendedores', ['Cadastre pelo menos um vendedor antes de distribuir leads.']); btn.disabled=false; btn.textContent='Criar lead'; return; }
-    payload = { ...base, origem: 'pago', vendedor_id: vendedorId, etapa: 'lead', tentativas: 0, historico_etapas: [{ etapa:'lead', data: today() }] };
+    payload = { ...base, origem: 'trafego', anuncio_origem: _funilAnuncioSel, vendedor_id: vendedorId, etapa: 'lead', tentativas: 0, historico_etapas: [{ etapa:'lead', data: today() }] };
     await Servicos.atualizarRodizio(idx);
   } else {
     const agoraIso = new Date().toISOString();
@@ -6919,7 +7007,7 @@ async function salvarNovoLeadFunil() {
     const vendedorEscolhido = isG ? document.getElementById('mfn-vendedor-select').value : u.id;
     if (isG && !vendedorEscolhido) { const e = document.getElementById('mfn-erro'); e.textContent = 'Cadastre pelo menos um vendedor antes.'; e.style.display='block'; btn.disabled=false; btn.textContent='Criar lead'; return; }
     payload = {
-      ...base, origem: 'ligacao', vendedor_id: vendedorEscolhido, etapa: 'contato', tentativas: 1,
+      ...base, origem: _funilLeadTipo, vendedor_id: vendedorEscolhido, etapa: 'contato', tentativas: 1,
       primeiro_contato_ts: agoraIso,
       interesse: _funilInteresseSel, valor_credito: parseFloat(document.getElementById('mfn-valorcredito').value)||0,
       renda_familiar: parseFloat(document.getElementById('mfn-renda').value)||0,
@@ -7166,29 +7254,170 @@ async function verificarRedistribuicaoAutomaticaFunil() {
   console.log(`🔄 Redistribuição automática: ${pendentes.length} lead(s) parado(s) redistribuído(s).`);
 }
 
+let _funilDetalheInteresseSel = [];
+
 function verDetalheLeadFunil(leadId) {
   const lead = DB.leadsFunil.find(l => l.id === leadId);
   if (!lead) return;
   const vend = DB.vendedores.find(v => v.id === lead.vendedor);
+  const isG = (AppState.user.role === 'gestor' || AppState.user.role === 'adm');
+  const etapaLabel = lead.etapa === 'desqualificado' ? 'Desqualificado' : (FUNIL_ETAPAS.find(e=>e.key===lead.etapa)?.label || lead.etapa);
+  const origemTexto = lead.origem === 'trafego' ? `Tráfego${lead.anuncioOrigem ? ' ('+lead.anuncioOrigem+')' : ''}` : lead.origem === 'pessoal' ? 'Pessoal' : 'Discadora/IA';
+  _funilDetalheInteresseSel = [...(lead.interesse || [])];
+
   document.getElementById('mfd-conteudo').innerHTML = `
-    <div style="font-size:15px;font-weight:700;margin-bottom:2px">${lead.nome}</div>
-    <div style="font-size:11px;color:var(--text3);margin-bottom:14px">${lead.email||'sem e-mail'} · ${lead.celular||'sem telefone'}</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;margin-bottom:14px">
-      <div><span style="color:var(--text3)">Interesse:</span> ${(lead.interesse||[]).join(', ')||'—'}</div>
-      <div><span style="color:var(--text3)">Origem:</span> ${lead.origemProspeccao || (lead.origem==='pago'?'Tráfego pago':'Ligação')}</div>
-      <div><span style="color:var(--text3)">Crédito:</span> ${fmt(lead.valorCredito)}</div>
-      <div><span style="color:var(--text3)">Renda:</span> ${fmt(lead.rendaFamiliar)}</div>
-      <div><span style="color:var(--text3)">Parcela ideal:</span> ${fmt(lead.parcelaIdeal)}</div>
-      <div><span style="color:var(--text3)">Recurso próprio:</span> ${fmt(lead.recursoProprio)}</div>
-      <div><span style="color:var(--text3)">Cidade:</span> ${lead.cidade||'—'}</div>
-      <div><span style="color:var(--text3)">Profissão:</span> ${lead.profissao||'—'}</div>
-      <div><span style="color:var(--text3)">Tentativas:</span> ${lead.tentativas||0}/6</div>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
+      <div>
+        <div style="font-size:16px;font-weight:800">${lead.nome}</div>
+        <div style="font-size:11px;color:var(--text3)">Entrou via ${origemTexto} · ${fmtDate(lead.criadoEm)}</div>
+      </div>
+      <span class="chip">${etapaLabel}</span>
     </div>
-    ${lead.observacoes ? `<div style="font-size:11px;color:var(--text2);background:var(--ink3);padding:8px;border-radius:6px;margin-bottom:10px">${lead.observacoes}</div>` : ''}
-    <div style="font-size:10px;color:var(--text3);margin-bottom:14px">Vendedor: ${vend?.nome||'—'} · Etapa: ${FUNIL_ETAPAS.find(e=>e.key===lead.etapa)?.label||lead.etapa}${lead.motivoPerdido?` (${lead.motivoPerdido})`:''}</div>
-    ${lead.etapa !== 'venda' && lead.etapa !== 'desqualificado' ? `<button class="btn btn-ghost btn-sm" onclick="redistribuirLeadFunil('${lead.id}');closeModal('m-funil-detalhe')">Redistribuir pra outro vendedor</button>` : ''}
+
+    <div class="form-row cols-2" style="margin-top:12px">
+      <div class="form-group"><label>E-mail</label><input id="mfd-email" value="${lead.email||''}"></div>
+      <div class="form-group"><label>Celular</label><input id="mfd-celular" value="${lead.celular||''}"></div>
+    </div>
+
+    <div class="form-group"><label>Interesse</label>
+      <div id="mfd-interesse" style="display:flex;gap:6px;flex-wrap:wrap">
+        ${FUNIL_INTERESSES.map(op => {
+          const sel = _funilDetalheInteresseSel.includes(op);
+          return `<span class="chip" data-val="${op}" onclick="toggleInteresseDetalheFunil('${op}')" style="cursor:pointer;${sel ? 'background:var(--brand);color:#fff;border-color:var(--brand);font-weight:700' : ''}">${op}</span>`;
+        }).join('')}
+      </div>
+    </div>
+
+    <div class="form-row cols-2">
+      <div class="form-group"><label>Valor do crédito</label><input type="number" id="mfd-valorcredito" value="${lead.valorCredito||''}"></div>
+      <div class="form-group"><label>Renda familiar</label><input type="number" id="mfd-renda" value="${lead.rendaFamiliar||''}"></div>
+    </div>
+
+    <div class="form-row cols-3">
+      <div class="form-group"><label>Decide a compra</label>
+        <select id="mfd-decide">
+          <option value="" ${!lead.decideCompra?'selected':''}>Selecione...</option>
+          <option value="sozinho" ${lead.decideCompra==='sozinho'?'selected':''}>Decide sozinho(a)</option>
+          <option value="com_conjuge" ${lead.decideCompra==='com_conjuge'?'selected':''}>Decide com cônjuge/família</option>
+          <option value="nao_decide" ${lead.decideCompra==='nao_decide'?'selected':''}>Não decide (influenciador)</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Parcela ideal</label><input type="number" id="mfd-parcela" value="${lead.parcelaIdeal||''}"></div>
+      <div class="form-group"><label>Recurso próprio</label><input type="number" id="mfd-recurso" value="${lead.recursoProprio||''}"></div>
+    </div>
+
+    <div class="form-row cols-2">
+      <div class="form-group"><label>Paga aluguel/financiamento</label>
+        <div style="display:flex;gap:8px">
+          <select id="mfd-aluguel" style="flex:0 0 90px" onchange="document.getElementById('mfd-aluguel-valor').style.display=this.value==='sim'?'block':'none'">
+            <option value="nao" ${lead.pagaAluguel!=='sim'?'selected':''}>Não</option>
+            <option value="sim" ${lead.pagaAluguel==='sim'?'selected':''}>Sim</option>
+          </select>
+          <input type="number" id="mfd-aluguel-valor" value="${lead.pagaAluguelValor||''}" style="display:${lead.pagaAluguel==='sim'?'block':'none'}">
+        </div>
+      </div>
+      <div class="form-group"><label>FGTS</label>
+        <div style="display:flex;gap:8px">
+          <select id="mfd-fgts" style="flex:0 0 90px" onchange="document.getElementById('mfd-fgts-valor').style.display=this.value==='sim'?'block':'none'">
+            <option value="nao" ${lead.fgts!=='sim'?'selected':''}>Não</option>
+            <option value="sim" ${lead.fgts==='sim'?'selected':''}>Sim</option>
+          </select>
+          <input type="number" id="mfd-fgts-valor" value="${lead.fgtsValor||''}" style="display:${lead.fgts==='sim'?'block':'none'}">
+        </div>
+      </div>
+    </div>
+
+    <div class="form-row cols-3">
+      <div class="form-group"><label>Cidade</label>
+        <select id="mfd-cidade">
+          <option value="">Selecione...</option>
+          ${FUNIL_CIDADES.map(c=>`<option value="${c}" ${lead.cidade===c?'selected':''}>${c}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group"><label>Origem da prospecção</label>
+        <select id="mfd-origemprosp">
+          <option value="">Selecione...</option>
+          ${FUNIL_ORIGENS_PROSPECCAO.map(o=>`<option value="${o}" ${lead.origemProspeccao===o?'selected':''}>${o}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group"><label>Profissão</label><input id="mfd-profissao" value="${lead.profissao||''}"></div>
+    </div>
+
+    <div style="font-size:10px;color:var(--text3);margin:6px 0 14px">Vendedor: ${vend?.nome||'—'}${lead.motivoPerdido?` · Motivo: ${lead.motivoPerdido}`:''}${(lead.vezesRedistribuido||0)>0?` · Redistribuído ${lead.vezesRedistribuido}x`:''}</div>
+
+    <div style="border-top:1px solid var(--line);padding-top:14px">
+      <label style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px">Feedback / observações da conversa</label>
+      <div style="display:flex;gap:6px;margin-top:6px;margin-bottom:12px">
+        <input id="mfd-novofeedback" placeholder="Escreva uma nota sobre a conversa...">
+        <button class="btn btn-ghost btn-sm" style="white-space:nowrap" onclick="adicionarFeedbackLeadFunil('${lead.id}')">+ Adicionar</button>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;max-height:180px;overflow-y:auto">
+        ${(lead.feedbacks||[]).slice().reverse().map(f => `<div style="background:var(--ink3);border-radius:8px;padding:8px 10px">
+          <div style="font-size:9px;color:var(--text3);margin-bottom:3px">${f.data} · ${f.autor||'—'}</div>
+          <div style="font-size:12px">${f.texto}</div>
+        </div>`).join('') || `<div style="font-size:11px;color:var(--text3);text-align:center;padding:12px 0">Nenhum feedback registrado ainda</div>`}
+      </div>
+    </div>
+
+    <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--line);padding-top:14px;margin-top:16px">
+      ${isG && lead.etapa !== 'venda' && lead.etapa !== 'desqualificado' ? `<button class="btn btn-ghost btn-sm" style="color:var(--brand)" onclick="redistribuirLeadFunil('${lead.id}');closeModal('m-funil-detalhe')">Redistribuir</button>` : '<span></span>'}
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost btn-sm" onclick="closeModal('m-funil-detalhe')">Fechar</button>
+        <button class="btn btn-primary btn-sm" onclick="salvarEdicaoLeadFunil('${lead.id}')">Salvar alterações</button>
+      </div>
+    </div>
   `;
   openModal('m-funil-detalhe');
+}
+
+function toggleInteresseDetalheFunil(valor) {
+  const idx = _funilDetalheInteresseSel.indexOf(valor);
+  if (idx >= 0) _funilDetalheInteresseSel.splice(idx, 1); else _funilDetalheInteresseSel.push(valor);
+  document.querySelectorAll('#mfd-interesse .chip').forEach(c => {
+    const sel = _funilDetalheInteresseSel.includes(c.dataset.val);
+    c.style.background = sel ? 'var(--brand)' : '';
+    c.style.color = sel ? '#fff' : '';
+    c.style.borderColor = sel ? 'var(--brand)' : '';
+    c.style.fontWeight = sel ? '700' : '400';
+  });
+}
+
+async function adicionarFeedbackLeadFunil(leadId) {
+  const input = document.getElementById('mfd-novofeedback');
+  const texto = input.value.trim();
+  if (!texto) return;
+  const lead = DB.leadsFunil.find(l => l.id === leadId);
+  if (!lead) return;
+  const novoFeedback = { texto, data: fmtDate(today()) + ' às ' + new Date().toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'}), autor: AppState.user.nome };
+  const feedbacks = [...(lead.feedbacks || []), novoFeedback];
+  await Servicos.atualizarLeadFunil(leadId, { feedbacks });
+  await carregarDadosIniciais();
+  verDetalheLeadFunil(leadId); // reabre já atualizado, sem perder o resto do que foi editado ainda não salvo
+}
+
+async function salvarEdicaoLeadFunil(leadId) {
+  const lead = DB.leadsFunil.find(l => l.id === leadId);
+  if (!lead) return;
+  await Servicos.atualizarLeadFunil(leadId, {
+    email: document.getElementById('mfd-email').value.trim(),
+    celular: document.getElementById('mfd-celular').value.trim(),
+    interesse: _funilDetalheInteresseSel,
+    valor_credito: parseFloat(document.getElementById('mfd-valorcredito').value) || 0,
+    renda_familiar: parseFloat(document.getElementById('mfd-renda').value) || 0,
+    decide_compra: document.getElementById('mfd-decide').value,
+    parcela_ideal: parseFloat(document.getElementById('mfd-parcela').value) || 0,
+    recurso_proprio: parseFloat(document.getElementById('mfd-recurso').value) || 0,
+    paga_aluguel: document.getElementById('mfd-aluguel').value,
+    paga_aluguel_valor: parseFloat(document.getElementById('mfd-aluguel-valor').value) || 0,
+    fgts: document.getElementById('mfd-fgts').value,
+    fgts_valor: parseFloat(document.getElementById('mfd-fgts-valor').value) || 0,
+    cidade: document.getElementById('mfd-cidade').value,
+    origem_prospeccao: document.getElementById('mfd-origemprosp').value,
+    profissao: document.getElementById('mfd-profissao').value.trim(),
+  });
+  closeModal('m-funil-detalhe');
+  await carregarDadosIniciais();
+  rerenderModule('funil');
 }
 
 function rerenderModule(id) {
