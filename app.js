@@ -5946,8 +5946,8 @@ function renderFunil() {
     const idxAtual = FUNIL_ETAPA_ORDEM.indexOf(lead.etapa);
     const proxima = FUNIL_ETAPA_ORDEM[idxAtual+1];
     const origCores = origemCores(lead.origem);
-    const corEtapa = FUNIL_CORES_ETAPA[lead.etapa] || { borda: 'var(--line)' };
-    return `<div class="card" style="padding:8px;margin-bottom:6px;cursor:pointer;border-left:3px solid ${corEtapa.borda}" onclick="verDetalheLeadFunil('${lead.id}')">
+    const corEtapa = FUNIL_CORES_ETAPA[lead.etapa] || { bg: 'var(--ink2)', borda: 'var(--line)' };
+    return `<div class="card" style="padding:8px;margin-bottom:6px;cursor:pointer;background:${corEtapa.bg};border-left:3px solid ${corEtapa.borda}" onclick="verDetalheLeadFunil('${lead.id}')">
       <div style="font-size:12px;font-weight:600;margin-bottom:2px">${lead.nome}</div>
       ${isG && !st.filtroVend ? `<div style="font-size:9px;color:var(--text3);margin-bottom:4px">${DB.vendedores.find(v=>v.id===lead.vendedor)?.nome || '—'}</div>` : ''}
       <span class="chip" style="background:${origCores.bg};color:${origCores.cor};font-size:9px">${origemLabel(lead.origem)}</span>
@@ -6053,15 +6053,15 @@ ${!isG ? `
   </div>
 </div>
 
-<div class="card" style="background:var(--green-dim);border:1px solid var(--green-glow)">
+<div class="card" style="background:#EAF3DE;border:1px solid #97C459">
   <div class="card-body">
-    <div class="form-divider">Projeção de fechamento — 10% do prospectado + 1 venda a cada 5 reuniões</div>
+    <div class="form-divider" style="color:#27500A">Projeção de fechamento — 10% do prospectado + 1 venda a cada 5 reuniões</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:10px">
-      <div><div class="stat-label">Por volume (10%)</div><div style="font-family:var(--mono);font-weight:600">${fmt(projecaoPorVolume)}</div></div>
-      <div><div class="stat-label">Por reuniões</div><div style="font-family:var(--mono);font-weight:600">${fmt(projecaoPorReuniao)}</div></div>
-      <div><div class="stat-label">Projeção combinada</div><div style="font-family:var(--mono);font-weight:700;font-size:16px">${fmt(projecaoMedia)}</div></div>
+      <div><div class="stat-label" style="color:#3B6D11">Por volume (10%)</div><div style="font-family:var(--mono);font-weight:600;color:#173404">${fmt(projecaoPorVolume)}</div></div>
+      <div><div class="stat-label" style="color:#3B6D11">Por reuniões</div><div style="font-family:var(--mono);font-weight:600;color:#173404">${fmt(projecaoPorReuniao)}</div></div>
+      <div><div class="stat-label" style="color:#3B6D11">Projeção combinada</div><div style="font-family:var(--mono);font-weight:700;font-size:16px;color:#173404">${fmt(projecaoMedia)}</div></div>
     </div>
-    <div style="font-size:11px;color:var(--text2)">Já fechado: ${fmt(valorVendasTotal)} (${pctProjRealizada.toFixed(0)}% da projeção)</div>
+    <div style="font-size:11px;color:#3B6D11">Já fechado: ${fmt(valorVendasTotal)} (${pctProjRealizada.toFixed(0)}% da projeção)</div>
   </div>
 </div>
 
