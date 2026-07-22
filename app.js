@@ -22,7 +22,7 @@ const PERCENTUAL_ESTORNO_RECEBIDA = 25; // % sobre a comissão já recebida — 
 /* ═══════════════════════════════════════════════════════════════════════════
    FUNIL DE ATENDIMENTO — constantes
    ═══════════════════════════════════════════════════════════════════════════ */
-const FUNIL_META = { reunioes: 20, vendas: 5, ticketMin: 200000, ticketMax: 300000, conversaoPago: 5, creditoProspectado: 15000000 };
+const FUNIL_META = { reunioes: 20, vendas: 5, ticketMin: 200000, ticketMax: 300000, conversaoPago: 5, creditoProspectado: 15000000, ligacoes: 2000 };
 const FUNIL_ETAPAS = [
   { key: 'lead',            label: 'Lead' },
   { key: 'contato',         label: 'Contato' },
@@ -5895,9 +5895,14 @@ function renderFunil() {
   const vendasDoMes = leadsVisiveis.filter(l => l.etapa === 'venda' && (dataUltimaEtapaFunil(l,'venda')||'').substring(0,7) === st.mesSel);
   const totalVendas = vendasDoMes.length;
   const valorVendasTotal = vendasDoMes.reduce((a,l) => a + (l.valorVenda||0), 0);
-  const ticketMedio = totalVendas > 0 ? valorVendasTotal/totalVendas : 0;
 
-  const leadsLigacao = leadsVisiveisMes.filter(l => l.origem === 'discadora' || l.origem === 'pessoal');
+  // NOVO: ticket médio baseado no valor de crédito dos leads ATIVOS do mês
+  // (atualiza desde o cadastro, não só quando a venda fecha)
+  const leadsAtivosMes = leadsVisiveisMes.filter(l => l.etapa !== 'desqualificado' && (l.valorCredito||0) > 0);
+  const ticketMedio = leadsAtivosMes.length > 0
+    ? leadsAtivosMes.reduce((a,l) => a + l.valorCredito, 0) / leadsAtivosMes.length
+    : 0;
+
   const leadsPago    = leadsVisiveisMes.filter(l => l.origem === 'trafego');
   const vendasPago   = leadsPago.filter(l => l.etapa === 'venda').length;
   const conversaoPagoReal = leadsPago.length > 0 ? (vendasPago/leadsPago.length)*100 : 0;
@@ -5909,13 +5914,6 @@ function renderFunil() {
   const totalLigacoes = isG
     ? (st.filtroVend ? totalLigacoesVend(st.filtroVend) : DB.vendedores.reduce((a,v) => a+totalLigacoesVend(v.id), 0))
     : totalLigacoesVend(u.id);
-
-  const funilLigacaoStats = {
-    ligacoes: totalLigacoes,
-    contatos: leadsLigacao.length,
-    qualificados: emEtapaOuDepoisFunil(leadsLigacao, 'qualificacao'),
-    reunioes: emEtapaOuDepoisFunil(leadsLigacao, FUNIL_ETAPA_REUNIAO_META),
-  };
 
   const creditoProspectado = leadsVisiveisMes.filter(l => l.etapa !== 'desqualificado').reduce((a,l) => a+(l.valorCredito||0), 0);
   const ticketRef = ticketMedio > 0 ? ticketMedio : (FUNIL_META.ticketMin+FUNIL_META.ticketMax)/2;
@@ -6034,6 +6032,11 @@ ${!isG ? `
     <div class="progress-wrap" style="margin-top:6px"><div class="progress-bar" style="width:${Math.min(totalVendas/FUNIL_META.vendas*100,100)}%;background:var(--brand)"></div></div>
   </div>
   <div class="stat-card">
+    <div class="stat-label">Meta ligações</div>
+    <div class="stat-value">${totalLigacoes} / ${FUNIL_META.ligacoes}</div>
+    <div class="progress-wrap" style="margin-top:6px"><div class="progress-bar" style="width:${Math.min(totalLigacoes/FUNIL_META.ligacoes*100,100)}%;background:var(--brand)"></div></div>
+  </div>
+  <div class="stat-card">
     <div class="stat-label">Crédito prospectado</div>
     <div class="stat-value" style="font-size:15px">${fmt(creditoProspectado)}</div>
     <div class="stat-meta">meta: ${fmt(FUNIL_META.creditoProspectado)}</div>
@@ -6041,7 +6044,7 @@ ${!isG ? `
   <div class="stat-card">
     <div class="stat-label">Ticket médio</div>
     <div class="stat-value" style="font-size:15px">${fmt(ticketMedio)}</div>
-    <div class="stat-meta">meta: 200k–300k</div>
+    <div class="stat-meta">${leadsAtivosMes.length} lead(s) ativo(s) · meta: 200k–300k</div>
   </div>
   <div class="stat-card">
     <div class="stat-label">Conversão tráfego pago</div>
@@ -6050,7 +6053,7 @@ ${!isG ? `
   </div>
 </div>
 
-<div class="card" style="background:var(--amber-dim);border:1px solid var(--amber-glow)">
+<div class="card" style="background:var(--green-dim);border:1px solid var(--green-glow)">
   <div class="card-body">
     <div class="form-divider">Projeção de fechamento — 10% do prospectado + 1 venda a cada 5 reuniões</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:10px">
@@ -6059,28 +6062,6 @@ ${!isG ? `
       <div><div class="stat-label">Projeção combinada</div><div style="font-family:var(--mono);font-weight:700;font-size:16px">${fmt(projecaoMedia)}</div></div>
     </div>
     <div style="font-size:11px;color:var(--text2)">Já fechado: ${fmt(valorVendasTotal)} (${pctProjRealizada.toFixed(0)}% da projeção)</div>
-  </div>
-</div>
-
-<div class="card">
-  <div class="card-body">
-    <div class="form-divider">Funil de lista fria (ligação)</div>
-    ${['ligacoes','contatos','qualificados','reunioes'].map((key,i,arr) => {
-      const labels = {ligacoes:'Ligações',contatos:'Contatos',qualificados:'Qualificados',reunioes:'Reuniões'};
-      const valor = funilLigacaoStats[key];
-      const anterior = i>0 ? funilLigacaoStats[arr[i-1]] : null;
-      const pct = anterior && anterior>0 ? ((valor/anterior)*100).toFixed(0) : null;
-      const largura = Math.max((valor/Math.max(funilLigacaoStats.ligacoes,1))*100, valor>0?4:0);
-      return `<div style="margin-bottom:9px">
-        <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px">
-          <span style="color:var(--text2);font-weight:600">${labels[key]}</span>
-          <span style="font-family:var(--mono)">${valor}${pct!==null?` <span style="color:var(--text3)">(${pct}%)</span>`:''}</span>
-        </div>
-        <div style="background:var(--ink4);border-radius:4px;height:14px;overflow:hidden">
-          <div style="background:${i===3?'var(--brand)':'var(--text2)'};height:100%;width:${largura}%"></div>
-        </div>
-      </div>`;
-    }).join('')}
   </div>
 </div>
 
