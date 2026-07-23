@@ -6021,52 +6021,77 @@ ${!isG ? `
   </div>
 </div>` : ''}
 
-<div class="stats-grid">
-  <div class="stat-card">
-    <div class="stat-label">Meta reuniões</div>
-    <div class="stat-value">${totalReunioes} / ${FUNIL_META.reunioes}</div>
-    <div class="progress-wrap" style="margin-top:6px"><div class="progress-bar" style="width:${Math.min(totalReunioes/FUNIL_META.reunioes*100,100)}%;background:var(--brand)"></div></div>
+<div class="card">
+  <div class="card-body">
+    <div class="form-divider" style="margin-bottom:14px">Metas do mês</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:20px">
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+          <span style="font-size:12px;color:var(--text2);font-weight:600">Reuniões</span>
+          <span style="font-size:15px;font-weight:800;font-family:var(--mono)">${totalReunioes}/${FUNIL_META.reunioes}</span>
+        </div>
+        <div class="progress-wrap"><div class="progress-bar" style="width:${Math.min(totalReunioes/FUNIL_META.reunioes*100,100)}%;background:var(--brand)"></div></div>
+      </div>
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+          <span style="font-size:12px;color:var(--text2);font-weight:600">Vendas</span>
+          <span style="font-size:15px;font-weight:800;font-family:var(--mono)">${totalVendas}/${FUNIL_META.vendas}</span>
+        </div>
+        <div class="progress-wrap"><div class="progress-bar" style="width:${Math.min(totalVendas/FUNIL_META.vendas*100,100)}%;background:var(--brand)"></div></div>
+      </div>
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+          <span style="font-size:12px;color:var(--text2);font-weight:600">Ligações</span>
+          <span style="font-size:15px;font-weight:800;font-family:var(--mono)">${totalLigacoes}/${FUNIL_META.ligacoes}</span>
+        </div>
+        <div class="progress-wrap"><div class="progress-bar" style="width:${Math.min(totalLigacoes/FUNIL_META.ligacoes*100,100)}%;background:var(--brand)"></div></div>
+      </div>
+    </div>
   </div>
-  <div class="stat-card">
-    <div class="stat-label">Meta vendas</div>
-    <div class="stat-value">${totalVendas} / ${FUNIL_META.vendas}</div>
-    <div class="progress-wrap" style="margin-top:6px"><div class="progress-bar" style="width:${Math.min(totalVendas/FUNIL_META.vendas*100,100)}%;background:var(--brand)"></div></div>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:20px">
+  <div class="card" style="margin-bottom:0">
+    <div class="card-body">
+      <div class="stat-label">Crédito prospectado</div>
+      <div style="font-size:20px;font-weight:800;font-family:var(--mono);margin-top:6px">${fmt(creditoProspectado)}</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:3px">meta: ${fmt(FUNIL_META.creditoProspectado)}</div>
+    </div>
   </div>
-  <div class="stat-card">
-    <div class="stat-label">Meta ligações</div>
-    <div class="stat-value">${totalLigacoes} / ${FUNIL_META.ligacoes}</div>
-    <div class="progress-wrap" style="margin-top:6px"><div class="progress-bar" style="width:${Math.min(totalLigacoes/FUNIL_META.ligacoes*100,100)}%;background:var(--brand)"></div></div>
+  <div class="card" style="margin-bottom:0">
+    <div class="card-body">
+      <div class="stat-label">Ticket médio</div>
+      <div style="font-size:20px;font-weight:800;font-family:var(--mono);margin-top:6px">${fmt(ticketMedio)}</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:3px">${leadsAtivosMes.length} lead(s) ativo(s) · meta 200-300k</div>
+    </div>
   </div>
-  <div class="stat-card">
-    <div class="stat-label">Crédito prospectado</div>
-    <div class="stat-value" style="font-size:15px">${fmt(creditoProspectado)}</div>
-    <div class="stat-meta">meta: ${fmt(FUNIL_META.creditoProspectado)}</div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-label">Ticket médio</div>
-    <div class="stat-value" style="font-size:15px">${fmt(ticketMedio)}</div>
-    <div class="stat-meta">${leadsAtivosMes.length} lead(s) ativo(s) · meta: 200k–300k</div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-label">Conversão tráfego pago</div>
-    <div class="stat-value">${conversaoPagoReal.toFixed(1)}%</div>
-    <div class="stat-meta">${vendasPago}/${leadsPago.length} leads</div>
+  <div class="card" style="margin-bottom:0">
+    <div class="card-body">
+      <div class="stat-label">Conversão tráfego</div>
+      <div style="font-size:20px;font-weight:800;font-family:var(--mono);margin-top:6px">${conversaoPagoReal.toFixed(1)}%</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:3px">${vendasPago} de ${leadsPago.length} leads</div>
+    </div>
   </div>
 </div>
 
 <div class="card" style="background:#EAF3DE;border:1px solid #97C459">
   <div class="card-body">
-    <div class="form-divider" style="color:#27500A">Projeção de fechamento — 10% do prospectado + 1 venda a cada 5 reuniões</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:10px">
-      <div><div class="stat-label" style="color:#3B6D11">Por volume (10%)</div><div style="font-family:var(--mono);font-weight:600;color:#173404">${fmt(projecaoPorVolume)}</div></div>
-      <div><div class="stat-label" style="color:#3B6D11">Por reuniões</div><div style="font-family:var(--mono);font-weight:600;color:#173404">${fmt(projecaoPorReuniao)}</div></div>
-      <div><div class="stat-label" style="color:#3B6D11">Projeção combinada</div><div style="font-family:var(--mono);font-weight:700;font-size:16px;color:#173404">${fmt(projecaoMedia)}</div></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:6px">
+      <div class="form-divider" style="color:#27500A;margin-bottom:0">Projeção de fechamento</div>
+      <div style="font-size:10px;color:#3B6D11">10% do prospectado + 1 venda a cada 5 reuniões</div>
     </div>
-    <div style="font-size:11px;color:#3B6D11">Já fechado: ${fmt(valorVendasTotal)} (${pctProjRealizada.toFixed(0)}% da projeção)</div>
+    <div style="display:flex;align-items:baseline;gap:24px;flex-wrap:wrap">
+      <div><span style="font-size:24px;font-weight:800;font-family:var(--mono);color:#173404">${fmt(projecaoMedia)}</span><span style="font-size:11px;color:#3B6D11;margin-left:6px">projeção combinada</span></div>
+      <div style="height:26px;width:1px;background:#97C45970"></div>
+      <div><span style="font-size:14px;font-weight:700;font-family:var(--mono);color:#3B6D11">${fmt(valorVendasTotal)}</span><span style="font-size:11px;color:#3B6D11;margin-left:6px">já fechado (${pctProjRealizada.toFixed(0)}%)</span></div>
+    </div>
   </div>
 </div>
 
-<div class="form-divider" style="margin:20px 0 10px">Pipeline</div>
+<div style="display:flex;justify-content:space-between;align-items:center;margin:20px 0 10px">
+  <div class="form-divider" style="margin-bottom:0">Pipeline</div>
+  <div style="font-size:11px;color:var(--text3)">${leadsVisiveisMes.filter(l=>l.etapa!=='desqualificado').length} lead(s) ativo(s) · ${fmt(creditoProspectado)} em negociação</div>
+</div>
 <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:8px">${pipelineHtml}</div>
 
 
