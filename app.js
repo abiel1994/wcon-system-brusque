@@ -5980,15 +5980,13 @@ function renderFunil() {
       }
     }
 
-    return `<div style="background:${corEtapa.bg};border:1px solid ${corEtapa.borda}40;border-radius:10px;padding:10px;min-width:200px;flex-shrink:0">
-      <div style="background:#fff;border-bottom:2px solid ${corEtapa.borda};border-radius:8px 8px 0 0;padding:12px 14px;margin:-10px -10px 10px">
-        <div onclick="${leads.length===0 ? `AppState.modulo.funil.colunasAbertas['${etapaKey}']=false;rerenderModule('funil')` : ''}" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;${leads.length===0?'cursor:pointer':''}">
-          <span style="font-size:15px;font-weight:800;color:#1A1D24">${label}</span>
-          <span style="background:${corEtapa.borda};color:#fff;font-size:13px;font-weight:800;font-family:var(--mono);width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;flex-shrink:0">${leads.length}</span>
+    return `<div style="background:${corEtapa.bg};border:1px solid ${corEtapa.borda}40;border-radius:10px;padding:10px;min-width:190px;flex-shrink:0">
+      <div onclick="${leads.length===0 ? `AppState.modulo.funil.colunasAbertas['${etapaKey}']=false;rerenderModule('funil')` : ''}" style="background:#fff;border-bottom:3px solid ${corEtapa.borda};border-radius:8px 8px 0 0;padding:12px 14px;margin:-10px -10px 10px;${leads.length===0?'cursor:pointer':''}">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:1px;text-transform:uppercase">${label}</span>
+          <span style="font-size:11px;font-weight:700;color:${corEtapa.borda};font-family:var(--mono)">${leads.length} lead${leads.length===1?'':'s'}</span>
         </div>
-        <div style="background:#EAF3DE;border:1px solid #97C459;border-radius:6px;padding:6px 8px;text-align:center">
-          <span style="font-size:15px;font-weight:800;font-family:var(--mono);color:#27500A">${fmt(valorTotal)}</span>
-        </div>
+        <div style="font-size:17px;font-weight:800;font-family:var(--mono);color:#1A1D24;margin-top:4px">${fmt(valorTotal)}</div>
       </div>
       ${leads.map(montarCard).join('') || '<div style="font-size:11px;color:var(--text3);text-align:center;padding:10px 0">—</div>'}
     </div>`;
