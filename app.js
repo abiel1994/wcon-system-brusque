@@ -5883,6 +5883,14 @@ function renderFunil() {
   const st = AppState.modulo.funil;
   if (!st.mesSel) st.mesSel = todayMes();
 
+  // NOVO: quando o gestor vê "Todos os vendedores", a meta escala pela
+  // quantidade de gente na equipe (20 reuniões x 5 pessoas = 100, etc.)
+  const multMeta = (isG && !st.filtroVend) ? Math.max(DB.vendedores.length, 1) : 1;
+  const metaReunioes = FUNIL_META.reunioes * multMeta;
+  const metaVendas = FUNIL_META.vendas * multMeta;
+  const metaLigacoes = FUNIL_META.ligacoes * multMeta;
+  const metaCredito = FUNIL_META.creditoProspectado * multMeta;
+
   const leadsVisiveis = leadsVisiveisFunil();
   const mesesDisp = Array.from(new Set([...DB.leadsFunil.map(l => (l.criadoEm||'').substring(0,7)).filter(Boolean), st.mesSel])).sort();
   const leadsVisiveisMes = leadsVisiveis.filter(l => (l.criadoEm||'').substring(0,7) === st.mesSel);
@@ -6028,23 +6036,23 @@ ${!isG ? `
       <div>
         <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
           <span style="font-size:12px;color:var(--text2);font-weight:600">Reuniões</span>
-          <span style="font-size:15px;font-weight:800;font-family:var(--mono)">${totalReunioes}/${FUNIL_META.reunioes}</span>
+          <span style="font-size:15px;font-weight:800;font-family:var(--mono)">${totalReunioes}/${metaReunioes}</span>
         </div>
-        <div class="progress-wrap"><div class="progress-bar" style="width:${Math.min(totalReunioes/FUNIL_META.reunioes*100,100)}%;background:var(--brand)"></div></div>
+        <div class="progress-wrap"><div class="progress-bar" style="width:${Math.min(totalReunioes/metaReunioes*100,100)}%;background:var(--brand)"></div></div>
       </div>
       <div>
         <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
           <span style="font-size:12px;color:var(--text2);font-weight:600">Vendas</span>
-          <span style="font-size:15px;font-weight:800;font-family:var(--mono)">${totalVendas}/${FUNIL_META.vendas}</span>
+          <span style="font-size:15px;font-weight:800;font-family:var(--mono)">${totalVendas}/${metaVendas}</span>
         </div>
-        <div class="progress-wrap"><div class="progress-bar" style="width:${Math.min(totalVendas/FUNIL_META.vendas*100,100)}%;background:var(--brand)"></div></div>
+        <div class="progress-wrap"><div class="progress-bar" style="width:${Math.min(totalVendas/metaVendas*100,100)}%;background:var(--brand)"></div></div>
       </div>
       <div>
         <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
           <span style="font-size:12px;color:var(--text2);font-weight:600">Ligações</span>
-          <span style="font-size:15px;font-weight:800;font-family:var(--mono)">${totalLigacoes}/${FUNIL_META.ligacoes}</span>
+          <span style="font-size:15px;font-weight:800;font-family:var(--mono)">${totalLigacoes}/${metaLigacoes}</span>
         </div>
-        <div class="progress-wrap"><div class="progress-bar" style="width:${Math.min(totalLigacoes/FUNIL_META.ligacoes*100,100)}%;background:var(--brand)"></div></div>
+        <div class="progress-wrap"><div class="progress-bar" style="width:${Math.min(totalLigacoes/metaLigacoes*100,100)}%;background:var(--brand)"></div></div>
       </div>
     </div>
   </div>
@@ -6055,7 +6063,7 @@ ${!isG ? `
     <div class="card-body">
       <div class="stat-label">Crédito prospectado</div>
       <div style="font-size:20px;font-weight:800;font-family:var(--mono);margin-top:6px">${fmt(creditoProspectado)}</div>
-      <div style="font-size:11px;color:var(--text3);margin-top:3px">meta: ${fmt(FUNIL_META.creditoProspectado)}</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:3px">meta: ${fmt(metaCredito)}</div>
     </div>
   </div>
   <div class="card" style="margin-bottom:0">
