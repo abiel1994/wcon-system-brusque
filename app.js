@@ -6801,6 +6801,12 @@ function renderModaisFunil() {
     </div>
 
     <div class="modal-sub" id="mfn-sub"></div>
+    <div id="mfn-vendedor-wrap" class="form-group" style="display:none">
+      <label>Vendedor</label>
+      <select id="mfn-vendedor-select">
+        ${DB.vendedores.map(v => `<option value="${v.id}">${v.nome}</option>`).join('')}
+      </select>
+    </div>
     <div class="form-row cols-2">
       <div class="form-group"><label>Nome *</label><input id="mfn-nome" placeholder="Nome do lead"></div>
       <div class="form-group"><label>E-mail</label><input id="mfn-email" placeholder="email@exemplo.com"></div>
@@ -6816,12 +6822,6 @@ function renderModaisFunil() {
     </div>
 
     <div id="mfn-campos-ligacao" style="display:none">
-      <div id="mfn-vendedor-wrap" class="form-group" style="display:none">
-        <label>Vendedor</label>
-        <select id="mfn-vendedor-select">
-          ${DB.vendedores.map(v => `<option value="${v.id}">${v.nome}</option>`).join('')}
-        </select>
-      </div>
       <div class="form-group"><label>Interesse</label>
         <div id="mfn-interesse" style="display:flex;gap:6px;flex-wrap:wrap">
           ${FUNIL_INTERESSES.map(op => `<span class="chip" data-val="${op}" onclick="toggleInteresseFunil('${op}')" style="cursor:pointer">${op}</span>`).join('')}
@@ -6968,9 +6968,9 @@ function trocarAbaLeadFunil(tipo) {
   });
   document.getElementById('mfn-campos-trafego').style.display = tipo === 'trafego' ? 'block' : 'none';
   document.getElementById('mfn-campos-ligacao').style.display = tipo !== 'trafego' ? 'block' : 'none';
-  document.getElementById('mfn-vendedor-wrap').style.display = (tipo !== 'trafego' && isG) ? 'block' : 'none';
+  document.getElementById('mfn-vendedor-wrap').style.display = isG ? 'block' : 'none';
   document.getElementById('mfn-sub').textContent = tipo === 'trafego'
-    ? 'Será atribuído automaticamente pelo rodízio. Nome, contato e qual anúncio trouxe o lead.'
+    ? (isG ? 'Escolha o vendedor. Nome, contato e qual anúncio trouxe o lead.' : 'Atribuído a você. Nome, contato e qual anúncio trouxe o lead.')
     : tipo === 'discadora'
       ? (isG ? 'Escolha o vendedor. Preencha o que ele conseguiu com o lead vindo da discadora/IA.' : 'Atribuído a você. Preencha o que conseguiu com o lead vindo da discadora/IA.')
       : (isG ? 'Escolha o vendedor. Lead trazido pessoalmente (rede/indicação).' : 'Atribuído a você. Lead trazido pessoalmente (rede/indicação).');
@@ -7011,16 +7011,14 @@ async function salvarNovoLeadFunil() {
   };
 
   let payload;
+  const isG = (u.role === 'gestor' || u.role === 'adm');
+  const vendedorEscolhido = isG ? document.getElementById('mfn-vendedor-select').value : u.id;
+  if (isG && !vendedorEscolhido) { const e = document.getElementById('mfn-erro'); e.textContent = 'Cadastre pelo menos um vendedor antes.'; e.style.display='block'; btn.disabled=false; btn.textContent='Criar lead'; return; }
+
   if (_funilLeadTipo === 'trafego') {
-    const { vendedorId, idx } = proximoDoRodizioFunil();
-    if (!vendedorId) { Dialog.alert('Sem vendedores', ['Cadastre pelo menos um vendedor antes de distribuir leads.']); btn.disabled=false; btn.textContent='Criar lead'; return; }
-    payload = { ...base, origem: 'trafego', anuncio_origem: _funilAnuncioSel, vendedor_id: vendedorId, etapa: 'lead', tentativas: 0, historico_etapas: [{ etapa:'lead', data: today() }] };
-    await Servicos.atualizarRodizio(idx);
+    payload = { ...base, origem: 'trafego', anuncio_origem: _funilAnuncioSel, vendedor_id: vendedorEscolhido, etapa: 'lead', tentativas: 0, historico_etapas: [{ etapa:'lead', data: today() }] };
   } else {
     const agoraIso = new Date().toISOString();
-    const isG = (u.role === 'gestor' || u.role === 'adm');
-    const vendedorEscolhido = isG ? document.getElementById('mfn-vendedor-select').value : u.id;
-    if (isG && !vendedorEscolhido) { const e = document.getElementById('mfn-erro'); e.textContent = 'Cadastre pelo menos um vendedor antes.'; e.style.display='block'; btn.disabled=false; btn.textContent='Criar lead'; return; }
     payload = {
       ...base, origem: _funilLeadTipo, vendedor_id: vendedorEscolhido, etapa: 'contato', tentativas: 1,
       primeiro_contato_ts: agoraIso,
