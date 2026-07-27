@@ -1704,6 +1704,7 @@ async function excluirVendedorUI(id) {
   const v = DB.vendedores.find(x => x.id === id);
   if (!v) return;
   const vendas = DB.vendas.filter(x => x.vendedor === id);
+  const equipe = DB.vendedores.filter(x => x.liderId === id);
 
   const _ok = await Dialog.danger('Excluir vendedor', [
     { tipo:'destaque', label:'Vendedor', valor: v.nome },
@@ -1712,10 +1713,20 @@ async function excluirVendedorUI(id) {
       { tipo:'divisor' },
       `⚠ Este vendedor possui ${vendas.length} contrato(s) registrado(s). Excluir o cadastro pode causar erro ao exibir esses contratos. Recomenda-se não excluir vendedores com histórico de vendas.`
     ] : []),
+    ...(equipe.length > 0 ? [
+      { tipo:'divisor' },
+      `⚠ Este vendedor é líder de equipe de: ${equipe.map(e=>e.nome).join(', ')}. Ao excluir, eles passam a reportar direto ao gestor (perdem o líder).`
+    ] : []),
     { tipo:'divisor' },
     'Esta ação não pode ser desfeita.'
   ]);
   if (!_ok) return;
+
+  // Se for líder de equipe, desvincula quem reporta a ele(a) antes de excluir
+  // (senão o banco bloqueia a exclusão por causa da referência)
+  for (const membro of equipe) {
+    await Servicos.salvarVendedor({ id: membro.id, lider_id: null });
+  }
 
   const sucesso = await Servicos.excluirVendedor(id);
   if (!sucesso) {
@@ -1723,7 +1734,7 @@ async function excluirVendedorUI(id) {
     return;
   }
 
-  DB.vendedores = DB.vendedores.filter(x => x.id !== id);
+  await carregarDadosIniciais();
   rerenderModule('vendedores');
 }
 
@@ -7409,7 +7420,10 @@ function verDetalheLeadFunil(leadId) {
         <div style="font-size:16px;font-weight:800">${lead.nome}</div>
         <div style="font-size:11px;color:var(--text3)">Entrou via ${origemTexto} · ${fmtDate(lead.criadoEm)}</div>
       </div>
-      <span class="chip">${etapaLabel}</span>
+      ${isG ? `<select id="mfd-etapa-select" onchange="moverEtapaDiretoFunil('${lead.id}', this.value)" style="width:auto;font-size:11px;padding:4px 8px">
+        ${FUNIL_ETAPAS.map(e => `<option value="${e.key}" ${lead.etapa===e.key?'selected':''}>${e.label}</option>`).join('')}
+        <option value="desqualificado" ${lead.etapa==='desqualificado'?'selected':''}>Desqualificado</option>
+      </select>` : `<span class="chip">${etapaLabel}</span>`}
     </div>
 
     <div class="form-row cols-2" style="margin-top:12px">
@@ -7544,6 +7558,19 @@ async function adicionarFeedbackLeadFunil(leadId) {
   await Servicos.atualizarLeadFunil(leadId, { feedbacks });
   await carregarDadosIniciais();
   verDetalheLeadFunil(leadId); // reabre já atualizado, sem perder o resto do que foi editado ainda não salvo
+}
+
+// NOVO: correção manual de etapa — move pra QUALQUER etapa (pra frente ou pra
+// trás), sem passar pelos modais de agendamento/venda. Só pro gestor, pra
+// corrigir engano (ex: lead que foi pro Follow-up por engano, volta pra Venda).
+async function moverEtapaDiretoFunil(leadId, novaEtapa) {
+  const lead = DB.leadsFunil.find(l => l.id === leadId);
+  if (!lead) return;
+  const historico = [...(lead.historico||[]), { etapa: novaEtapa, data: today(), nota: 'Ajustado manualmente pelo gestor' }];
+  await Servicos.atualizarLeadFunil(leadId, { etapa: novaEtapa, historico_etapas: historico });
+  await carregarDadosIniciais();
+  verDetalheLeadFunil(leadId);
+  rerenderModule('funil');
 }
 
 async function salvarEdicaoLeadFunil(leadId) {
