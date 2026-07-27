@@ -7713,7 +7713,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       btnEnviar.disabled = true;
       try {
         var { error } = await Supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: 'https://wcons.com.br'
+          redirectTo: 'https://brusque.wcons.com.br'
         });
         if (error) throw error;
         msgRecuperacao.textContent = '✓ Link enviado! Verifique seu e-mail.';
