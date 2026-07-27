@@ -300,6 +300,25 @@ const Servicos = {
     }
   },
 
+  // NOVO: gestor corrige um dia específico (define a quantidade exata, não soma)
+  async editarQuantidadeLigacao(vendedorId, data, novaQuantidade) {
+    const { data: existente } = await sb.from('funil_ligacoes').select('*').eq('vendedor_id', vendedorId).eq('data', data).maybeSingle();
+    if (existente) {
+      const { error } = await sb.from('funil_ligacoes').update({ quantidade: novaQuantidade }).eq('id', existente.id);
+      if (error) { console.error('Erro editar ligações:', error); return false; }
+    } else {
+      const { error } = await sb.from('funil_ligacoes').insert({ vendedor_id: vendedorId, data, quantidade: novaQuantidade });
+      if (error) { console.error('Erro criar registro de ligações:', error); return false; }
+    }
+    return true;
+  },
+
+  async excluirLigacao(vendedorId, data) {
+    const { error } = await sb.from('funil_ligacoes').delete().eq('vendedor_id', vendedorId).eq('data', data);
+    if (error) { console.error('Erro excluir ligações:', error); return false; }
+    return true;
+  },
+
   async listarIAFunil() {
     const { data, error } = await sb.from('funil_ia').select('*');
     if (error) { console.warn('funil_ia não encontrada:', error.message); return []; }
