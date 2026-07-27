@@ -6053,6 +6053,7 @@ ${!isG ? `
           <span style="font-size:15px;font-weight:800;font-family:var(--mono)">${totalLigacoes}/${metaLigacoes}</span>
         </div>
         <div class="progress-wrap"><div class="progress-bar" style="width:${Math.min(totalLigacoes/metaLigacoes*100,100)}%;background:var(--brand)"></div></div>
+        ${isG ? `<div style="margin-top:4px"><button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 8px" onclick="abrirEditarLigacoesFunil()">✏️ Corrigir registros</button></div>` : ''}
       </div>
     </div>
   </div>
@@ -6281,7 +6282,7 @@ ${leadsParados3dias.length > 0 ? `
         const vend = DB.vendedores.find(v => v.id === l.vendedor);
         return `<div style="display:flex;justify-content:space-between;align-items:center;background:var(--ink2);border-radius:6px;padding:6px 10px">
           <span style="font-size:12px">${l.nome} <span style="color:var(--text3)">(${vend?.nome||'—'})</span></span>
-          <button class="btn btn-ghost btn-sm" onclick="redistribuirLeadFunil('${l.id}')">Redistribuir agora</button>
+          <button class="btn btn-ghost btn-sm" onclick="abrirRedistribuirLeadFunil('${l.id}')">Redistribuir agora</button>
         </div>`;
       }).join('')}
     </div>
@@ -6927,6 +6928,38 @@ function renderModaisFunil() {
   </div>
 </div>
 
+<div class="overlay" id="m-funil-redistribuir">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-title">Redistribuir lead</div>
+    <div class="modal-sub" id="mfr-sub"></div>
+    <div class="form-group">
+      <label>Novo vendedor</label>
+      <select id="mfr-vendedor-select"></select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('m-funil-redistribuir')">Cancelar</button>
+      <button class="btn btn-primary" onclick="confirmarRedistribuicaoManual()">Redistribuir</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="m-funil-ligacoes">
+  <div class="modal" style="max-width:420px">
+    <button class="modal-close" onclick="closeModal('m-funil-ligacoes')">✕</button>
+    <div class="modal-title">Corrigir registros de ligações</div>
+    <div class="form-group">
+      <label>Vendedor</label>
+      <select id="mfl-vendedor-select" onchange="carregarLigacoesDoVendedor()">
+        ${DB.vendedores.map(v => `<option value="${v.id}">${v.nome}</option>`).join('')}
+      </select>
+    </div>
+    <div id="mfl-lista" style="max-height:280px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;margin-top:10px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('m-funil-ligacoes')">Fechar</button>
+    </div>
+  </div>
+</div>
+
 <div class="overlay" id="m-funil-detalhe">
   <div class="modal" style="max-width:460px">
     <button class="modal-close" onclick="closeModal('m-funil-detalhe')">✕</button>
@@ -7223,17 +7256,80 @@ async function salvarLigacoesFunil() {
   rerenderModule('funil');
 }
 
-async function redistribuirLeadFunil(leadId) {
+let _funilRedistribuirTarget = null;
+
+function abrirRedistribuirLeadFunil(leadId) {
   const lead = DB.leadsFunil.find(l => l.id === leadId);
   if (!lead) return;
+  _funilRedistribuirTarget = leadId;
   const mes = (lead.criadoEm||today()).substring(0,7);
-  const novoVendedor = melhorPerformanceFunil(lead.vendedor, mes);
-  const historico = [...(lead.historico||[]), { etapa: lead.etapa, data: today(), nota: 'Redistribuído manualmente' }];
+  const sugestao = melhorPerformanceFunil(lead.vendedor, mes);
+  const vendAtual = DB.vendedores.find(v => v.id === lead.vendedor);
+
+  document.getElementById('mfr-sub').textContent = `${lead.nome} — atualmente com ${vendAtual?.nome || '—'}`;
+  const select = document.getElementById('mfr-vendedor-select');
+  const opcoes = DB.vendedores.filter(v => v.id !== lead.vendedor);
+  select.innerHTML = opcoes.map(v => `<option value="${v.id}" ${v.id===sugestao?'selected':''}>${v.nome}${v.id===sugestao?' (melhor performance no mês)':''}</option>`).join('');
+  openModal('m-funil-redistribuir');
+}
+
+async function confirmarRedistribuicaoManual() {
+  const leadId = _funilRedistribuirTarget;
+  const novoVendedor = document.getElementById('mfr-vendedor-select').value;
+  if (!novoVendedor) return;
+  const lead = DB.leadsFunil.find(l => l.id === leadId);
+  if (!lead) return;
+  const historico = [...(lead.historico||[]), { etapa: lead.etapa, data: today(), nota: 'Redistribuído manualmente pelo gestor' }];
   await Servicos.atualizarLeadFunil(leadId, {
     vendedor_anterior_id: lead.vendedor, vendedor_id: novoVendedor, tentativas: 0,
     vezes_redistribuido: (lead.vezesRedistribuido||0) + 1, historico_etapas: historico,
   });
+  closeModal('m-funil-redistribuir');
+  closeModal('m-funil-detalhe');
   await carregarDadosIniciais();
+  rerenderModule('funil');
+}
+
+function abrirEditarLigacoesFunil() {
+  const st = AppState.modulo.funil;
+  const select = document.getElementById('mfl-vendedor-select');
+  if (st.filtroVend) select.value = st.filtroVend;
+  openModal('m-funil-ligacoes');
+  carregarLigacoesDoVendedor();
+}
+
+function carregarLigacoesDoVendedor() {
+  const vendId = document.getElementById('mfl-vendedor-select').value;
+  const st = AppState.modulo.funil;
+  const porDia = DB.funilLigacoes[vendId] || {};
+  const dias = Object.entries(porDia)
+    .filter(([d]) => d.substring(0,7) === st.mesSel)
+    .sort((a,b) => b[0].localeCompare(a[0]));
+
+  document.getElementById('mfl-lista').innerHTML = dias.length ? dias.map(([data, qtd]) => `
+    <div style="display:flex;align-items:center;gap:8px;background:var(--ink3);border-radius:6px;padding:8px 10px">
+      <span style="font-size:12px;flex:1">${fmtDate(data)}</span>
+      <input type="number" min="0" value="${qtd}" id="mfl-qtd-${data}" style="width:70px;padding:4px 6px;font-size:12px">
+      <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:4px 8px" onclick="salvarEdicaoLigacaoFunil('${vendId}','${data}')">Salvar</button>
+      <button class="btn btn-ghost btn-sm" style="color:var(--brand);font-size:11px;padding:4px 8px" onclick="excluirLigacaoFunilUI('${vendId}','${data}')">✕</button>
+    </div>
+  `).join('') : `<div style="font-size:12px;color:var(--text3);text-align:center;padding:16px 0">Nenhum registro de ligação nesse mês</div>`;
+}
+
+async function salvarEdicaoLigacaoFunil(vendId, data) {
+  const novaQtd = parseInt(document.getElementById(`mfl-qtd-${data}`).value) || 0;
+  await Servicos.editarQuantidadeLigacao(vendId, data, novaQtd);
+  await carregarDadosIniciais();
+  carregarLigacoesDoVendedor();
+  rerenderModule('funil');
+}
+
+async function excluirLigacaoFunilUI(vendId, data) {
+  const ok = await Dialog.confirm('Excluir registro', [`Excluir o registro de ligações do dia ${fmtDate(data)}?`]);
+  if (!ok) return;
+  await Servicos.excluirLigacao(vendId, data);
+  await carregarDadosIniciais();
+  carregarLigacoesDoVendedor();
   rerenderModule('funil');
 }
 
@@ -7373,7 +7469,7 @@ function verDetalheLeadFunil(leadId) {
     </div>
 
     <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--line);padding-top:14px;margin-top:16px">
-      ${isG && lead.etapa !== 'venda' && lead.etapa !== 'desqualificado' ? `<button class="btn btn-ghost btn-sm" style="color:var(--brand)" onclick="redistribuirLeadFunil('${lead.id}');closeModal('m-funil-detalhe')">Redistribuir</button>` : ''}
+      ${isG && lead.etapa !== 'venda' && lead.etapa !== 'desqualificado' ? `<button class="btn btn-ghost btn-sm" style="color:var(--brand)" onclick="abrirRedistribuirLeadFunil('${lead.id}')">Redistribuir</button>` : ''}
       ${isG && lead.etapa === 'desqualificado' ? `<button class="btn btn-ghost btn-sm" style="color:var(--brand)" onclick="excluirLeadFunilUI('${lead.id}')">🗑 Excluir lead</button>` : ''}
       <div style="display:flex;gap:8px;margin-left:auto">
         <button class="btn btn-ghost btn-sm" onclick="closeModal('m-funil-detalhe')">Fechar</button>
