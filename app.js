@@ -7754,6 +7754,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     linkEsqueci.addEventListener('click', function (e) {
       e.preventDefault();
+      // NOVO: reseta o botão sempre que abre (corrige ficar travado em
+      // "Enviado!" depois do primeiro envio, impedindo reenviar)
+      btnEnviar.disabled = false;
+      btnEnviar.textContent = 'Enviar link de recuperação';
+      msgRecuperacao.textContent = '';
       modal.style.display = 'flex';
       inputEmail.focus();
     });
@@ -7762,6 +7767,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       modal.style.display = 'none';
       inputEmail.value = '';
       msgRecuperacao.textContent = '';
+      btnEnviar.disabled = false;
+      btnEnviar.textContent = 'Enviar link de recuperação';
     }
 
     btnFechar.addEventListener('click', fecharModal);
