@@ -661,7 +661,9 @@ function initModuleEvents(id) {
 // nível de acesso "gestor"). Pra adicionar alguém, só incluir um item aqui.
 const GESTOR_USERS = [
   { email: 'abielnoguera@gmail.com', nome: 'Abiel Noguera' },
-  // { email: 'novo-dono@exemplo.com', nome: 'Nome do Dono' },
+  { email: 'julia.brusque@embracon.com.br', nome: 'Julia' },
+  { email: 'fernando.brusque@embracon.com.br', nome: 'Fernando' },
+  { email: 'capital8.consultoria@gmail.com', nome: 'Rosangela' },
 ];
 
 // NOVO: cada ADM tem o próprio nome (antes o nome "Lilia" estava fixo pra
