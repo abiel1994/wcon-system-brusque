@@ -648,6 +648,9 @@ function initModuleEvents(id) {
   document.querySelectorAll('.overlay').forEach(el => {
     el.addEventListener('click', e => { if (e.target === el) el.classList.remove('open'); });
   });
+  if (id === 'funil') {
+    setTimeout(atualizarBarraPipelineFunil, 0);
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -6097,15 +6100,41 @@ ${!isG ? `
   </div>
 </div>
 
-<div style="display:flex;justify-content:space-between;align-items:center;margin:20px 0 10px">
+<div style="display:flex;justify-content:space-between;align-items:center;margin:20px 0 10px;gap:10px;flex-wrap:wrap">
   <div class="form-divider" style="margin-bottom:0">Pipeline</div>
-  <div style="font-size:11px;color:var(--text3)">${leadsVisiveisMes.filter(l=>l.etapa!=='desqualificado').length} lead(s) ativo(s) · ${fmt(creditoProspectado)} em negociação</div>
+  <div style="display:flex;align-items:center;gap:10px">
+    <div style="font-size:11px;color:var(--text3)">${leadsVisiveisMes.filter(l=>l.etapa!=='desqualificado').length} lead(s) ativo(s) · ${fmt(creditoProspectado)} em negociação</div>
+    <div style="display:flex;gap:4px;background:var(--ink2);border:1px solid var(--line);border-radius:8px;padding:3px">
+      <div onclick="rolarPipelineFunil(-1)" style="width:26px;height:26px;display:flex;align-items:center;justify-content:center;color:var(--text);font-size:14px;font-weight:700;border-radius:6px;cursor:pointer">‹</div>
+      <div onclick="rolarPipelineFunil(1)" style="width:26px;height:26px;display:flex;align-items:center;justify-content:center;color:var(--text);font-size:14px;font-weight:700;border-radius:6px;cursor:pointer">›</div>
+    </div>
+  </div>
 </div>
-<div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:8px">${pipelineHtml}</div>
+<div style="background:var(--ink3);border-radius:6px;height:4px;margin-bottom:10px;overflow:hidden">
+  <div id="pipeline-scroll-bar" style="background:var(--brand);height:100%;width:20%;border-radius:6px;transition:width .1s"></div>
+</div>
+<div id="pipeline-scroll-container" onscroll="atualizarBarraPipelineFunil()" style="display:flex;gap:8px;overflow-x:auto;padding-bottom:8px">${pipelineHtml}</div>
 
 
 ${renderModaisFunil()}
 `;
+}
+
+function rolarPipelineFunil(direcao) {
+  const el = document.getElementById('pipeline-scroll-container');
+  if (!el) return;
+  el.scrollBy({ left: direcao * 300, behavior: 'smooth' });
+}
+
+function atualizarBarraPipelineFunil() {
+  const el = document.getElementById('pipeline-scroll-container');
+  const barra = document.getElementById('pipeline-scroll-bar');
+  if (!el || !barra) return;
+  const maxScroll = el.scrollWidth - el.clientWidth;
+  const pct = maxScroll > 0 ? (el.scrollLeft / maxScroll) * 100 : 0;
+  const larguraVisivel = Math.max((el.clientWidth / el.scrollWidth) * 100, 8);
+  barra.style.width = larguraVisivel + '%';
+  barra.style.marginLeft = (pct * (100 - larguraVisivel) / 100) + '%';
 }
 
 function toggleFunilDetalhe(idBase) {
