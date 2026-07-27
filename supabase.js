@@ -522,6 +522,8 @@ async function carregarDadosIniciais() {
       requerGestorReuniao2: l.requer_gestor_reuniao2, requerSupervisorReuniao2: l.requer_supervisor_reuniao2,
       criadoEm: l.criado_em, criadoEmTs: l.criado_em_ts, primeiroContatoTs: l.primeiro_contato_ts,
       historico: l.historico_etapas || [],
+      anuncioOrigem: l.anuncio_origem || '',
+      feedbacks: l.feedbacks || [],
     }));
 
     DB.funilRodizio = { ultimoIndice: rodizio?.ultimo_indice ?? -1 };
