@@ -260,6 +260,12 @@ const Servicos = {
     return data;
   },
 
+  async excluirLeadFunil(id) {
+    const { error } = await sb.from('leads_funil').delete().eq('id', id);
+    if (error) { console.error('Erro excluir lead:', error); return false; }
+    return true;
+  },
+
   async atualizarLeadFunil(id, campos) {
     const { data, error } = await sb.from('leads_funil').update(campos).eq('id', id).select().single();
     if (error) { console.error('Erro atualizar lead:', error); return null; }
