@@ -7440,15 +7440,15 @@ function verDetalheLeadFunil(leadId) {
   _funilDetalheInteresseSel = [...(lead.interesse || [])];
 
   document.getElementById('mfd-conteudo').innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
-      <div>
-        <div style="font-size:16px;font-weight:800">${lead.nome}</div>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;gap:10px">
+      <div style="flex:1">
+        <input id="mfd-nome" value="${lead.nome}" style="font-size:16px;font-weight:800;border:none;border-bottom:1px dashed var(--line2);background:transparent;padding:2px 0;width:100%" title="Clique pra editar o nome">
         <div style="font-size:11px;color:var(--text3)">Entrou via ${origemTexto} · ${fmtDate(lead.criadoEm)}</div>
       </div>
-      ${isG ? `<select id="mfd-etapa-select" onchange="moverEtapaDiretoFunil('${lead.id}', this.value)" style="width:auto;font-size:11px;padding:4px 8px">
+      <select id="mfd-etapa-select" onchange="moverEtapaDiretoFunil('${lead.id}', this.value)" style="width:auto;font-size:11px;padding:4px 8px;flex-shrink:0">
         ${FUNIL_ETAPAS.map(e => `<option value="${e.key}" ${lead.etapa===e.key?'selected':''}>${e.label}</option>`).join('')}
         <option value="desqualificado" ${lead.etapa==='desqualificado'?'selected':''}>Desqualificado</option>
-      </select>` : `<span class="chip">${etapaLabel}</span>`}
+      </select>
     </div>
 
     <div class="form-row cols-2" style="margin-top:12px">
@@ -7630,7 +7630,10 @@ async function moverEtapaDiretoFunil(leadId, novaEtapa) {
 async function salvarEdicaoLeadFunil(leadId) {
   const lead = DB.leadsFunil.find(l => l.id === leadId);
   if (!lead) return;
+  const novoNome = document.getElementById('mfd-nome').value.trim();
+  if (!novoNome) { Dialog.alert('Nome obrigatório', ['O nome do lead não pode ficar vazio.']); return; }
   await Servicos.atualizarLeadFunil(leadId, {
+    nome: novoNome,
     email: document.getElementById('mfd-email').value.trim(),
     celular: document.getElementById('mfd-celular').value.trim(),
     interesse: _funilDetalheInteresseSel,
