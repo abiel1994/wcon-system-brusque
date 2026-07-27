@@ -7375,14 +7375,27 @@ function verDetalheLeadFunil(leadId) {
     </div>
 
     <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--line);padding-top:14px;margin-top:16px">
-      ${isG && lead.etapa !== 'venda' && lead.etapa !== 'desqualificado' ? `<button class="btn btn-ghost btn-sm" style="color:var(--brand)" onclick="redistribuirLeadFunil('${lead.id}');closeModal('m-funil-detalhe')">Redistribuir</button>` : '<span></span>'}
-      <div style="display:flex;gap:8px">
+      ${isG && lead.etapa !== 'venda' && lead.etapa !== 'desqualificado' ? `<button class="btn btn-ghost btn-sm" style="color:var(--brand)" onclick="redistribuirLeadFunil('${lead.id}');closeModal('m-funil-detalhe')">Redistribuir</button>` : ''}
+      ${isG && lead.etapa === 'desqualificado' ? `<button class="btn btn-ghost btn-sm" style="color:var(--brand)" onclick="excluirLeadFunilUI('${lead.id}')">🗑 Excluir lead</button>` : ''}
+      <div style="display:flex;gap:8px;margin-left:auto">
         <button class="btn btn-ghost btn-sm" onclick="closeModal('m-funil-detalhe')">Fechar</button>
         <button class="btn btn-primary btn-sm" onclick="salvarEdicaoLeadFunil('${lead.id}')">Salvar alterações</button>
       </div>
     </div>
   `;
   openModal('m-funil-detalhe');
+}
+
+async function excluirLeadFunilUI(leadId) {
+  const lead = DB.leadsFunil.find(l => l.id === leadId);
+  if (!lead) return;
+  const ok = await Dialog.confirm('Excluir lead', [`Tem certeza que quer excluir "${lead.nome}" de vez? Essa ação não pode ser desfeita.`]);
+  if (!ok) return;
+  const sucesso = await Servicos.excluirLeadFunil(leadId);
+  if (!sucesso) { Dialog.alert('Erro', ['Não foi possível excluir o lead.']); return; }
+  closeModal('m-funil-detalhe');
+  await carregarDadosIniciais();
+  rerenderModule('funil');
 }
 
 function toggleInteresseDetalheFunil(valor) {
