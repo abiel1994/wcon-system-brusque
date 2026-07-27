@@ -6276,7 +6276,7 @@ function renderPainelExecutivoFunil() {
 ${leadsParados3dias.length > 0 ? `
 <div class="card" style="background:var(--red-dim);border:1px solid var(--brand-border)">
   <div class="card-body">
-    <div style="font-size:11px;color:var(--brand);margin-bottom:8px;font-weight:600">⚠ ${leadsParados3dias.length} lead(s) parado(s) +3 dias — serão redistribuídos automaticamente se ninguém agir</div>
+    <div style="font-size:11px;color:var(--brand);margin-bottom:8px;font-weight:600">⚠ ${leadsParados3dias.length} lead(s) parado(s) +3 dias — considere redistribuir</div>
     <div style="display:flex;flex-direction:column;gap:6px">
       ${leadsParados3dias.map(l => {
         const vend = DB.vendedores.find(v => v.id === l.vendedor);
@@ -7587,7 +7587,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   initTheme();
 
   await carregarDadosIniciais();
-  await verificarRedistribuicaoAutomaticaFunil();
+  // NOVO: redistribuição automática desativada por pedido — o lead fica
+  // sempre com quem cadastrou/está com ele, só muda de mão se o gestor
+  // decidir manualmente (modal de redistribuir). Se precisar reativar no
+  // futuro, é só descomentar a linha abaixo.
+  // await verificarRedistribuicaoAutomaticaFunil();
 
   await tentarSessaoSalva();
 
