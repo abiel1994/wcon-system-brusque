@@ -755,6 +755,8 @@ function entrarNoApp() {
   Router.navigate('dashboard');
 }
 
+let _isRecoveryFlow = false;
+
 async function salvarNovaSenha() {
   const s1 = document.getElementById('pa-senha1').value;
   const s2 = document.getElementById('pa-senha2').value;
@@ -772,6 +774,27 @@ async function salvarNovaSenha() {
     if (errPwd) throw errPwd;
 
     const u = AppState.user;
+
+    // NOVO: se veio do link de "esqueci minha senha", só troca a senha e
+    // entra — não mexe em primeiro_acesso (isso é uma coisa separada)
+    if (_isRecoveryFlow) {
+      _isRecoveryFlow = false;
+      if (!AppState.user) {
+        const { data } = await Supabase.auth.getUser();
+        const userResolvido = resolveUserByEmail(data?.user);
+        if (!userResolvido) {
+          errEl.textContent = '⚠ Senha salva, mas não conseguimos identificar seu acesso. Faça login normalmente.';
+          errEl.style.display = 'block';
+          document.getElementById('primeiro-acesso')?.classList.add('hidden');
+          document.getElementById('login')?.classList.remove('hidden');
+          return;
+        }
+        AppState.user = userResolvido;
+      }
+      entrarNoApp();
+      return;
+    }
+
     if (u.role === 'adm') {
       const { error: errAdm } = await Supabase.auth.updateUser({ data: { primeiro_acesso: false } });
       if (errAdm) console.warn('Não foi possível marcar primeiro_acesso=false (ADM):', errAdm);
@@ -7444,7 +7467,7 @@ function verDetalheLeadFunil(leadId) {
 
     <div class="form-row cols-2">
       <div class="form-group"><label>Valor do crédito</label><input type="number" id="mfd-valorcredito" value="${lead.valorCredito||''}"></div>
-      <div class="form-group"><label>Renda familiar</label><input type="number" id="mfd-renda" value="${lead.rendaFamiliar||''}"></div>
+      <div class="form-group"><label>Renda familiar</label><input type="number" id="mfd-renda" value="${lead.rendaFamiliar||''}" oninput="atualizarQualificacaoBoxFunil()"></div>
     </div>
 
     <div class="form-row cols-3">
@@ -7456,7 +7479,7 @@ function verDetalheLeadFunil(leadId) {
           <option value="nao_decide" ${lead.decideCompra==='nao_decide'?'selected':''}>Não decide (influenciador)</option>
         </select>
       </div>
-      <div class="form-group"><label>Parcela ideal</label><input type="number" id="mfd-parcela" value="${lead.parcelaIdeal||''}"></div>
+      <div class="form-group"><label>Parcela ideal</label><input type="number" id="mfd-parcela" value="${lead.parcelaIdeal||''}" oninput="atualizarQualificacaoBoxFunil()"></div>
       <div class="form-group"><label>Recurso próprio</label><input type="number" id="mfd-recurso" value="${lead.recursoProprio||''}"></div>
     </div>
 
@@ -7500,6 +7523,11 @@ function verDetalheLeadFunil(leadId) {
     <div style="font-size:10px;color:var(--text3);margin:6px 0 14px">Vendedor: ${vend?.nome||'—'}${lead.motivoPerdido?` · Motivo: ${lead.motivoPerdido}`:''}${(lead.vezesRedistribuido||0)>0?` · Redistribuído ${lead.vezesRedistribuido}x`:''}</div>
 
     <div style="border-top:1px solid var(--line);padding-top:14px">
+      <label style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px">Qualificação</label>
+      <div id="mfd-qualificacao-box" style="margin-top:8px"></div>
+    </div>
+
+    <div style="border-top:1px solid var(--line);padding-top:14px;margin-top:14px">
       <label style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px">Feedback / observações da conversa</label>
       <div style="display:flex;gap:6px;margin-top:6px;margin-bottom:12px">
         <input id="mfd-novofeedback" placeholder="Escreva uma nota sobre a conversa...">
@@ -7523,6 +7551,30 @@ function verDetalheLeadFunil(leadId) {
     </div>
   `;
   openModal('m-funil-detalhe');
+  atualizarQualificacaoBoxFunil();
+}
+
+function atualizarQualificacaoBoxFunil() {
+  const box = document.getElementById('mfd-qualificacao-box');
+  if (!box) return;
+  const renda = parseFloat(document.getElementById('mfd-renda')?.value) || 0;
+  const parcela = parseFloat(document.getElementById('mfd-parcela')?.value) || 0;
+
+  if (renda <= 0 || parcela <= 0) {
+    box.innerHTML = `<div style="font-size:11px;color:var(--text3);background:var(--ink3);border-radius:8px;padding:10px 12px">Preencha renda familiar e parcela ideal pra ver a sugestão de qualificação.</div>`;
+    return;
+  }
+
+  const ratio = parcela / renda;
+  let sug;
+  if (ratio <= 0.3) sug = { bg:'var(--green-dim)', borda:'#97C459', cor:'#27500A', texto:'Parcela é ' + (ratio*100).toFixed(0) + '% da renda — perfil provável' };
+  else if (ratio <= 0.5) sug = { bg:'#FFF8E8', borda:'#EF9F27', cor:'#633806', texto:'Parcela é ' + (ratio*100).toFixed(0) + '% da renda — atenção, avaliar com cuidado' };
+  else sug = { bg:'var(--red-dim)', borda:'#E24B4A', cor:'var(--brand)', texto:'Parcela é ' + (ratio*100).toFixed(0) + '% da renda — provável sem perfil' };
+
+  box.innerHTML = `<div style="background:${sug.bg};border:1px solid ${sug.borda};border-radius:8px;padding:10px 12px">
+    <div style="font-size:12px;font-weight:700;color:${sug.cor}">${sug.texto}</div>
+    <div style="font-size:10px;color:${sug.cor};margin-top:2px;opacity:0.85">Sugestão automática — a decisão final é sua, pode ajustar renda/parcela acima que ela recalcula.</div>
+  </div>`;
 }
 
 async function excluirLeadFunilUI(leadId) {
@@ -7643,6 +7695,21 @@ function initTheme() {
    ═══════════════════════════════════════════════════════════════════════════ */
 document.addEventListener('DOMContentLoaded', async () => {
   initTheme();
+
+  // NOVO: detecta quando alguém chega pelo link de "esqueci minha senha".
+  // Sem isso, o link só fazia login direto (sem pedir senha nova) — por
+  // isso parecia que "não abria nada" ao clicar no link do e-mail.
+  Supabase.auth.onAuthStateChange((event, session) => {
+    if (event === 'PASSWORD_RECOVERY') {
+      _isRecoveryFlow = true;
+      const user = resolveUserByEmail(session?.user);
+      if (user) AppState.user = user;
+      document.getElementById('login')?.classList.add('hidden');
+      document.getElementById('primeiro-acesso')?.classList.remove('hidden');
+      const sub = document.querySelector('#primeiro-acesso .login-split-form-sub, #primeiro-acesso .modal-sub');
+      if (sub) sub.textContent = 'Defina sua nova senha de acesso.';
+    }
+  });
 
   await carregarDadosIniciais();
   // NOVO: redistribuição automática desativada por pedido — o lead fica
