@@ -38,6 +38,18 @@ const Servicos = {
   },
 
   async excluirVendedor(id) {
+    // NOVO: limpa qualquer referência apontando pra esse vendedor DIRETO no
+    // banco (não depende do cache local, que pode estar desatualizado) —
+    // senão o banco bloqueia a exclusão por chave estrangeira
+    const { error: errDesvincular } = await sb.from('vendedores').update({ lider_id: null }).eq('lider_id', id);
+    if (errDesvincular) { console.error('Erro ao desvincular equipe:', errDesvincular); return false; }
+
+    const { error: errLeads1 } = await sb.from('leads_funil').update({ vendedor_id: null }).eq('vendedor_id', id);
+    if (errLeads1) { console.error('Erro ao desvincular leads (vendedor_id):', errLeads1); return false; }
+
+    const { error: errLeads2 } = await sb.from('leads_funil').update({ vendedor_anterior_id: null }).eq('vendedor_anterior_id', id);
+    if (errLeads2) { console.error('Erro ao desvincular leads (vendedor_anterior_id):', errLeads2); return false; }
+
     const { error } = await sb.from('vendedores').delete().eq('id', id);
     if (error) { console.error('Erro excluir vendedor:', error); return false; }
     return true;
