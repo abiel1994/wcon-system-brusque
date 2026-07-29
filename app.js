@@ -37,7 +37,7 @@ const FUNIL_ETAPAS = [
 ];
 const FUNIL_ETAPA_ORDEM = FUNIL_ETAPAS.map(e => e.key);
 const FUNIL_ETAPA_REUNIAO_META = 'reuniao1';
-const FUNIL_ANUNCIOS = ['YouTube', 'Site', 'Formulário WhatsApp', 'Facebook', 'Instagram'];
+const FUNIL_ANUNCIOS = ['YouTube', 'Site', 'Formulário WhatsApp', 'Facebook', 'Instagram', 'Planilha Alexandre', 'Formulário Instagram', 'Formulário Facebook', 'Marcelo Face', 'Marcelo Insta'];
 const FUNIL_CORES_ETAPA = {
   lead:            { bg: '#EFF6FF', borda: '#378ADD' },
   contato:         { bg: '#FFF8E8', borda: '#EF9F27' },
@@ -5928,7 +5928,10 @@ function leadsVisiveisFunil() {
   const u = AppState.user;
   const isG = (u.role === 'gestor' || u.role === 'adm');
   const st = AppState.modulo.funil;
-  if (isG) return st.filtroVend ? DB.leadsFunil.filter(l => l.vendedor === st.filtroVend) : DB.leadsFunil;
+  if (isG) {
+    if (st.filtroVend === '__sem_vendedor__') return DB.leadsFunil.filter(l => !l.vendedor);
+    return st.filtroVend ? DB.leadsFunil.filter(l => l.vendedor === st.filtroVend) : DB.leadsFunil;
+  }
   return DB.leadsFunil.filter(l => l.vendedor === u.id);
 }
 
@@ -6013,7 +6016,15 @@ function renderFunil() {
   const projecaoMedia = (projecaoPorVolume + projecaoPorReuniao) / 2;
   const pctProjRealizada = projecaoMedia > 0 ? Math.min((valorVendasTotal/projecaoMedia)*100, 999) : 0;
 
-  const vendorTabsFunil = isG ? renderVendorFilter(st.filtroVend, "AppState.modulo.funil.filtroVend", 'funil') : '';
+  const _leadsSemVendedor = DB.leadsFunil.filter(l => !l.vendedor && l.etapa !== 'venda' && l.etapa !== 'desqualificado').length;
+  const vendorTabsFunil = isG ? `
+  <div class="vendor-filter">
+    <select class="form-input vendor-filter-select" onchange="AppState.modulo.funil.filtroVend=this.value||null;rerenderModule('funil')">
+      <option value=""${!st.filtroVend ? ' selected' : ''}>Todos os vendedores</option>
+      <option value="__sem_vendedor__" style="color:var(--brand);font-weight:700"${st.filtroVend==='__sem_vendedor__' ? ' selected' : ''}>⚠ Não atribuído (${_leadsSemVendedor})</option>
+      ${DB.vendedores.map(v => `<option value="${v.id}"${st.filtroVend === v.id ? ' selected' : ''}>${v.nome}</option>`).join('')}
+    </select>
+  </div>` : '';
   const mesNavFunil = renderMesNav(mesesDisp, st.mesSel, "AppState.modulo.funil.mesSel", 'funil');
 
   function colunaLeads(etapaKey) {
@@ -6037,9 +6048,12 @@ function renderFunil() {
     const proxima = FUNIL_ETAPA_ORDEM[idxAtual+1];
     const origCores = origemCores(lead.origem);
     const corEtapa = FUNIL_CORES_ETAPA[lead.etapa] || { bg: 'var(--ink2)', borda: 'var(--line)' };
+    const semVendedor = !lead.vendedor;
     return `<div style="background:#fff;border-radius:8px;padding:10px;margin-bottom:8px;cursor:pointer;border-left:4px solid ${corEtapa.borda};box-shadow:0 1px 3px rgba(0,0,0,0.06)" onclick="verDetalheLeadFunil('${lead.id}')">
       <div style="font-size:13px;font-weight:700;color:#1A1D24;margin-bottom:2px">${lead.nome}</div>
-      ${isG && !st.filtroVend ? `<div style="font-size:10px;color:var(--text3);margin-bottom:6px">${DB.vendedores.find(v=>v.id===lead.vendedor)?.nome || '—'}</div>` : ''}
+      ${semVendedor
+        ? `<div style="display:inline-flex;align-items:center;gap:4px;background:var(--red-dim);color:var(--brand);font-size:9px;font-weight:700;padding:3px 8px;border-radius:5px;margin-bottom:6px">⚠ Não atribuído</div>`
+        : (isG && !st.filtroVend ? `<div style="font-size:10px;color:var(--text3);margin-bottom:6px">${DB.vendedores.find(v=>v.id===lead.vendedor)?.nome || '—'}</div>` : '')}
       <span class="chip" style="background:${origCores.bg};color:${origCores.cor};font-size:9px">${origemLabel(lead.origem)}</span>
       ${lead.valorCredito ? `<div style="font-size:16px;font-weight:800;font-family:var(--mono);color:#1A1D24;margin-top:8px">${fmt(lead.valorCredito)}</div>` : ''}
       ${lead.etapa === 'venda' ? `<div style="font-size:15px;font-weight:800;font-family:var(--mono);color:#27500A;margin-top:6px">${fmt(lead.valorVenda)}</div>` : ''}
@@ -6047,10 +6061,12 @@ function renderFunil() {
         <span style="font-size:11px;font-family:var(--mono);font-weight:700;color:${(lead.tentativas||0)>=6?'var(--brand)':'#9CA3AF'}">${lead.tentativas||0}/6 tentativas</span>
         <button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:11px" onclick="incrementarTentativaFunil('${lead.id}')">+1</button>
       </div>` : ''}
-      ${proxima ? `<div onclick="event.stopPropagation()" style="display:flex;gap:5px;margin-top:9px">
+      ${semVendedor
+        ? `<div onclick="event.stopPropagation()" style="margin-top:9px"><button class="btn btn-primary btn-sm" style="width:100%;font-size:11px;padding:6px" onclick="abrirRedistribuirLeadFunil('${lead.id}')">Atribuir a um vendedor</button></div>`
+        : (proxima ? `<div onclick="event.stopPropagation()" style="display:flex;gap:5px;margin-top:9px">
         <button class="btn btn-ghost btn-sm" style="flex:1;font-size:11px;padding:6px" onclick="moverEtapaFunil('${lead.id}','${proxima}')">→ ${FUNIL_ETAPAS.find(e=>e.key===proxima)?.label}</button>
         <button class="btn btn-ghost btn-sm" style="color:var(--brand);font-size:11px;padding:6px 9px" onclick="marcarPerdidoFunil('${lead.id}')">✕</button>
-      </div>` : ''}
+      </div>` : '')}
     </div>`;
   }
 
@@ -6897,6 +6913,7 @@ ${detalhe}
 }
 
 function renderModaisFunil() {
+  const _isGestorModal = (AppState.user?.role === 'gestor' || AppState.user?.role === 'adm');
   return `
 <div class="overlay" id="m-funil-novo">
   <div class="modal" style="max-width:560px">
@@ -6904,8 +6921,8 @@ function renderModaisFunil() {
     <div class="modal-title">Novo lead</div>
 
     <div class="tabs" style="margin-bottom:14px">
-      <div class="tab active" id="mfn-tab-trafego" onclick="trocarAbaLeadFunil('trafego')">Tráfego</div>
-      <div class="tab" id="mfn-tab-discadora" onclick="trocarAbaLeadFunil('discadora')">Discadora/IA</div>
+      ${_isGestorModal ? `<div class="tab active" id="mfn-tab-trafego" onclick="trocarAbaLeadFunil('trafego')">Tráfego</div>` : ''}
+      <div class="tab ${_isGestorModal?'':'active'}" id="mfn-tab-discadora" onclick="trocarAbaLeadFunil('discadora')">Discadora/IA</div>
       <div class="tab" id="mfn-tab-pessoal" onclick="trocarAbaLeadFunil('pessoal')">Pessoal</div>
     </div>
 
@@ -7036,17 +7053,17 @@ function renderModaisFunil() {
   </div>
 </div>
 
-<div class="overlay" id="m-funil-redistribuir">
+<div class="overlay" id="m-funil-redistribuir" style="z-index:600">
   <div class="modal" style="max-width:380px">
-    <div class="modal-title">Redistribuir lead</div>
+    <div class="modal-title" id="mfr-title">Redistribuir lead</div>
     <div class="modal-sub" id="mfr-sub"></div>
     <div class="form-group">
-      <label>Novo vendedor</label>
+      <label>Vendedor</label>
       <select id="mfr-vendedor-select"></select>
     </div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeModal('m-funil-redistribuir')">Cancelar</button>
-      <button class="btn btn-primary" onclick="confirmarRedistribuicaoManual()">Redistribuir</button>
+      <button class="btn btn-primary" id="mfr-btn-confirmar" onclick="confirmarRedistribuicaoManual()">Redistribuir</button>
     </div>
   </div>
 </div>
@@ -7097,7 +7114,8 @@ function abrirModalNovoLeadFunil() {
   document.getElementById('mfn-aluguel-valor').style.display = 'none';
   document.getElementById('mfn-fgts-valor').style.display = 'none';
   document.getElementById('mfn-erro').style.display = 'none';
-  trocarAbaLeadFunil('trafego');
+  const _isGestorAbrir = (AppState.user?.role === 'gestor' || AppState.user?.role === 'adm');
+  trocarAbaLeadFunil(_isGestorAbrir ? 'trafego' : 'discadora');
   openModal('m-funil-novo');
 }
 
@@ -7109,9 +7127,11 @@ function trocarAbaLeadFunil(tipo) {
   });
   document.getElementById('mfn-campos-trafego').style.display = tipo === 'trafego' ? 'block' : 'none';
   document.getElementById('mfn-campos-ligacao').style.display = tipo !== 'trafego' ? 'block' : 'none';
-  document.getElementById('mfn-vendedor-wrap').style.display = isG ? 'block' : 'none';
+  // NOVO: tráfego não tem escolha de vendedor — sempre entra "Não atribuído",
+  // a distribuição acontece depois, separadamente (redistribuir/atribuir)
+  document.getElementById('mfn-vendedor-wrap').style.display = (isG && tipo !== 'trafego') ? 'block' : 'none';
   document.getElementById('mfn-sub').textContent = tipo === 'trafego'
-    ? (isG ? 'Escolha o vendedor. Nome, contato e qual anúncio trouxe o lead.' : 'Atribuído a você. Nome, contato e qual anúncio trouxe o lead.')
+    ? 'Entra como "Não atribuído". Nome, contato e qual anúncio trouxe o lead — a distribuição pro vendedor é feita depois.'
     : tipo === 'discadora'
       ? (isG ? 'Escolha o vendedor. Preencha o que ele conseguiu com o lead vindo da discadora/IA.' : 'Atribuído a você. Preencha o que conseguiu com o lead vindo da discadora/IA.')
       : (isG ? 'Escolha o vendedor. Lead trazido pessoalmente (rede/indicação).' : 'Atribuído a você. Lead trazido pessoalmente (rede/indicação).');
@@ -7157,7 +7177,7 @@ async function salvarNovoLeadFunil() {
   if (isG && !vendedorEscolhido) { const e = document.getElementById('mfn-erro'); e.textContent = 'Cadastre pelo menos um vendedor antes.'; e.style.display='block'; btn.disabled=false; btn.textContent='Criar lead'; return; }
 
   if (_funilLeadTipo === 'trafego') {
-    payload = { ...base, origem: 'trafego', anuncio_origem: _funilAnuncioSel, vendedor_id: vendedorEscolhido, etapa: 'lead', tentativas: 0, historico_etapas: [{ etapa:'lead', data: today() }] };
+    payload = { ...base, origem: 'trafego', anuncio_origem: _funilAnuncioSel, vendedor_id: null, etapa: 'lead', tentativas: 0, historico_etapas: [{ etapa:'lead', data: today() }] };
   } else {
     const agoraIso = new Date().toISOString();
     payload = {
@@ -7371,8 +7391,11 @@ function abrirRedistribuirLeadFunil(leadId) {
   const mes = (lead.criadoEm||today()).substring(0,7);
   const sugestao = melhorPerformanceFunil(lead.vendedor, mes);
   const vendAtual = DB.vendedores.find(v => v.id === lead.vendedor);
+  const semVendedor = !lead.vendedor;
 
-  document.getElementById('mfr-sub').textContent = `${lead.nome} — atualmente com ${vendAtual?.nome || '—'}`;
+  document.getElementById('mfr-title').textContent = semVendedor ? 'Atribuir a um vendedor' : 'Redistribuir lead';
+  document.getElementById('mfr-btn-confirmar').textContent = semVendedor ? 'Atribuir' : 'Redistribuir';
+  document.getElementById('mfr-sub').textContent = semVendedor ? `${lead.nome} — ainda não atribuído` : `${lead.nome} — atualmente com ${vendAtual?.nome || '—'}`;
   const select = document.getElementById('mfr-vendedor-select');
   const opcoes = DB.vendedores.filter(v => v.id !== lead.vendedor);
   select.innerHTML = opcoes.map(v => `<option value="${v.id}" ${v.id===sugestao?'selected':''}>${v.nome}${v.id===sugestao?' (melhor performance no mês)':''}</option>`).join('');
