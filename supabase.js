@@ -524,6 +524,7 @@ async function carregarDadosIniciais() {
       historico: l.historico_etapas || [],
       anuncioOrigem: l.anuncio_origem || '',
       feedbacks: l.feedbacks || [],
+      vendaId: l.venda_id || null,
     }));
 
     DB.funilRodizio = { ultimoIndice: rodizio?.ultimo_indice ?? -1 };
