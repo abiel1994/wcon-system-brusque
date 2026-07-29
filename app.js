@@ -2844,6 +2844,33 @@ ${busca ? `<div style="font-size:11px;color:var(--text3);margin:-6px 0 12px">Bus
 </div>`;
 }
 
+let _vendaOrigemLeadId = null;
+
+// NOVO: abre o formulário REAL de Nova Venda (mesmo do Relatórios/Vendedores),
+// pré-preenchido com os dados do lead do Funil — pra gerar comissionamento
+// de verdade quando um lead vira Venda, em vez de só guardar um valor solto.
+function abrirNovaVendaDoLead(leadId) {
+  const lead = DB.leadsFunil.find(l => l.id === leadId);
+  if (!lead) return;
+  _vendaOrigemLeadId = leadId;
+
+  abrirNovaVenda(); // monta o formulário base (tabelas, visibilidade de vendedor, etc.)
+
+  document.getElementById('mv-title').textContent = 'Registrar venda — ' + lead.nome;
+  document.getElementById('mv-cli').value = lead.nome;
+  if (lead.valorCredito) document.getElementById('mv-val').value = lead.valorCredito;
+
+  const u = AppState.user;
+  const isG = (u.role === 'gestor' || u.role === 'adm');
+  if (isG) {
+    const selectVend = document.getElementById('mv-vend');
+    if (selectVend) {
+      selectVend.value = lead.vendedor;
+      onVendedorChange(); // atualiza tabelas disponíveis pro vendedor certo
+    }
+  }
+}
+
 function abrirNovaVenda() {
   AppState.editing.vendaId = null;
   document.getElementById('mv-title').textContent = 'Registrar venda';
@@ -3064,6 +3091,20 @@ async function saveVenda() {
         valor: val, dvenda: dv, d2parc: d2, status: 'ativo', obs,
         dataInad: null, parcelas, estorno: null, notifs: [],
       });
+
+      // NOVO: se essa venda veio de um lead do Funil de Atendimento, linka
+      // o lead a essa venda e move ele pra etapa Venda de verdade
+      if (_vendaOrigemLeadId) {
+        const leadOrigem = DB.leadsFunil.find(l => l.id === _vendaOrigemLeadId);
+        if (leadOrigem) {
+          const historico = [...(leadOrigem.historico||[]), { etapa:'venda', data: today() }];
+          await Servicos.atualizarLeadFunil(_vendaOrigemLeadId, {
+            etapa: 'venda', valor_venda: val, venda_id: novaVenda.id, historico_etapas: historico,
+          });
+        }
+        _vendaOrigemLeadId = null;
+      }
+
       AppState.modulo.relatorio.mesSel = mesKey(dv);
       Dialog.success('Venda cadastrada', [{ tipo:'destaque', label:'Cliente', valor: cli }]);
     } catch(e) {
@@ -3073,7 +3114,9 @@ async function saveVenda() {
     }
   }
   closeModal('m-venda');
+  await carregarDadosIniciais();
   rerenderModule('relatorio');
+  rerenderModule('funil');
 }
 
 async function excluirVenda(id) {
@@ -7148,9 +7191,7 @@ async function salvarNovoLeadFunil() {
 
 async function moverEtapaFunil(leadId, novaEtapa) {
   if (novaEtapa === 'venda') {
-    _funilLeadVendaTarget = leadId;
-    document.getElementById('mfv-valor').value = '';
-    openModal('m-funil-venda');
+    abrirNovaVendaDoLead(leadId);
     return;
   }
   if (novaEtapa === 'reuniao1' || novaEtapa === 'reuniao2') {
