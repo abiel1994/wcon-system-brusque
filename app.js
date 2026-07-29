@@ -53,10 +53,21 @@ const FUNIL_CORES_ETAPA = {
 };
 
 // NOVO: máscara de moeda em tempo real (digita "500000" -> mostra "R$ 500.000,00")
-function aplicarMascaraMoeda(input) {
-  const digits = input.value.replace(/\D/g, '');
-  if (!digits) { input.value = ''; return; }
-  const num = parseInt(digits, 10);
+function aplicarMascaraMoeda(input, event) {
+  let raw = input.dataset.raw || '';
+  const tipo = event && event.inputType;
+  if (tipo === 'deleteContentBackward' || tipo === 'deleteContentForward') {
+    raw = raw.slice(0, -1);
+  } else if (tipo === 'insertFromPaste' || !event) {
+    raw = input.value.replace(/\D/g, '');
+  } else if (event && event.data && /\d/.test(event.data)) {
+    raw = raw + event.data.replace(/\D/g, '');
+  } else if (!tipo) {
+    raw = input.value.replace(/\D/g, '');
+  }
+  input.dataset.raw = raw;
+  if (!raw) { input.value = ''; return; }
+  const num = parseInt(raw, 10);
   input.value = 'R$ ' + num.toLocaleString('pt-BR') + ',00';
 }
 function valorMoedaParaNumero(str) {
@@ -6961,7 +6972,7 @@ function renderModaisFunil() {
         ${FUNIL_INTERESSES.map(op => `<span class="chip" data-val="${op}" onclick="toggleInteresseFunil('${op}')" style="cursor:pointer">${op}</span>`).join('')}
       </div>
     </div>
-    <div class="form-group"><label>Valor do crédito</label><input type="text" inputmode="numeric" id="mfn-valorcredito" placeholder="R$ 0,00" oninput="aplicarMascaraMoeda(this)"></div>
+    <div class="form-group"><label>Valor do crédito</label><input type="text" inputmode="numeric" id="mfn-valorcredito" placeholder="R$ 0,00" oninput="aplicarMascaraMoeda(this, event)"></div>
 
     <div id="mfn-campos-trafego" style="display:block">
       <div class="form-group"><label>Qual anúncio veio</label>
@@ -7550,7 +7561,7 @@ function verDetalheLeadFunil(leadId) {
     </div>
 
     <div class="form-row cols-2">
-      <div class="form-group"><label>Valor do crédito</label><input type="text" inputmode="numeric" id="mfd-valorcredito" value="${formatarValorMoedaInicial(lead.valorCredito)}" oninput="aplicarMascaraMoeda(this)"></div>
+      <div class="form-group"><label>Valor do crédito</label><input type="text" inputmode="numeric" id="mfd-valorcredito" value="${formatarValorMoedaInicial(lead.valorCredito)}" data-raw="${lead.valorCredito ? Math.round(lead.valorCredito) : ''}" oninput="aplicarMascaraMoeda(this, event)"></div>
       <div class="form-group"><label>Renda familiar</label><input type="number" id="mfd-renda" value="${lead.rendaFamiliar||''}" oninput="atualizarQualificacaoBoxFunil()"></div>
     </div>
 
