@@ -51,6 +51,23 @@ const FUNIL_CORES_ETAPA = {
   followup:        { bg: '#F0F2F5', borda: '#9CA3AF' },
   desqualificado:  { bg: '#FCEBEB', borda: '#C8392B' },
 };
+
+// NOVO: máscara de moeda em tempo real (digita "500000" -> mostra "R$ 500.000,00")
+function aplicarMascaraMoeda(input) {
+  const digits = input.value.replace(/\D/g, '');
+  if (!digits) { input.value = ''; return; }
+  const num = parseInt(digits, 10);
+  input.value = 'R$ ' + num.toLocaleString('pt-BR') + ',00';
+}
+function valorMoedaParaNumero(str) {
+  if (!str) return 0;
+  const limpo = String(str).replace(/[^\d,]/g, '');
+  return parseFloat(limpo.replace(',', '.')) || 0;
+}
+function formatarValorMoedaInicial(valor) {
+  if (!valor) return '';
+  return 'R$ ' + Number(valor).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
 const FUNIL_INTERESSES = ['Auto', 'Imóvel', 'Moto', 'Serviços', 'Outros'];
 const FUNIL_ORIGENS_PROSPECCAO = ['Tráfego pago', 'Ligação ativa', 'Indicação', 'Redes sociais', 'Porta a porta', 'Outro'];
 const FUNIL_CIDADES = ['Brusque', 'Blumenau', 'Itajaí', 'Outra'];
@@ -6939,6 +6956,13 @@ function renderModaisFunil() {
     </div>
     <div class="form-group"><label>Celular</label><input id="mfn-celular" placeholder="(00) 00000-0000"></div>
 
+    <div class="form-group"><label>Interesse</label>
+      <div id="mfn-interesse" style="display:flex;gap:6px;flex-wrap:wrap">
+        ${FUNIL_INTERESSES.map(op => `<span class="chip" data-val="${op}" onclick="toggleInteresseFunil('${op}')" style="cursor:pointer">${op}</span>`).join('')}
+      </div>
+    </div>
+    <div class="form-group"><label>Valor do crédito</label><input type="text" inputmode="numeric" id="mfn-valorcredito" placeholder="R$ 0,00" oninput="aplicarMascaraMoeda(this)"></div>
+
     <div id="mfn-campos-trafego" style="display:block">
       <div class="form-group"><label>Qual anúncio veio</label>
         <div id="mfn-anuncio" style="display:flex;gap:6px;flex-wrap:wrap">
@@ -6948,16 +6972,8 @@ function renderModaisFunil() {
     </div>
 
     <div id="mfn-campos-ligacao" style="display:none">
-      <div class="form-group"><label>Interesse</label>
-        <div id="mfn-interesse" style="display:flex;gap:6px;flex-wrap:wrap">
-          ${FUNIL_INTERESSES.map(op => `<span class="chip" data-val="${op}" onclick="toggleInteresseFunil('${op}')" style="cursor:pointer">${op}</span>`).join('')}
-        </div>
-      </div>
-      <div class="form-row cols-2">
-        <div class="form-group"><label>Valor do crédito</label><input type="number" id="mfn-valorcredito" placeholder="250000"></div>
-        <div class="form-group"><label>Renda familiar</label><input type="number" id="mfn-renda" placeholder="8000"></div>
-      </div>
       <div class="form-row cols-3">
+        <div class="form-group"><label>Renda familiar</label><input type="number" id="mfn-renda" placeholder="8000"></div>
         <div class="form-group"><label>Decide a compra</label>
           <select id="mfn-decide">
             <option value="">Selecione...</option>
@@ -6967,9 +6983,9 @@ function renderModaisFunil() {
           </select>
         </div>
         <div class="form-group"><label>Parcela ideal</label><input type="number" id="mfn-parcela" placeholder="1500"></div>
-        <div class="form-group"><label>Recurso próprio</label><input type="number" id="mfn-recurso" placeholder="0"></div>
       </div>
       <div class="form-row cols-2">
+        <div class="form-group"><label>Recurso próprio</label><input type="number" id="mfn-recurso" placeholder="0"></div>
         <div class="form-group"><label>Paga aluguel/financiamento</label>
           <div style="display:flex;gap:8px">
             <select id="mfn-aluguel" style="flex:0 0 90px" onchange="document.getElementById('mfn-aluguel-valor').style.display=this.value==='sim'?'block':'none'">
@@ -6978,6 +6994,8 @@ function renderModaisFunil() {
             <input type="number" id="mfn-aluguel-valor" placeholder="Valor" style="display:none">
           </div>
         </div>
+      </div>
+      <div class="form-row cols-2">
         <div class="form-group"><label>FGTS</label>
           <div style="display:flex;gap:8px">
             <select id="mfn-fgts" style="flex:0 0 90px" onchange="document.getElementById('mfn-fgts-valor').style.display=this.value==='sim'?'block':'none'">
@@ -7130,7 +7148,9 @@ function trocarAbaLeadFunil(tipo) {
   // NOVO: tráfego não tem escolha de vendedor — sempre entra "Não atribuído",
   // a distribuição acontece depois, separadamente (redistribuir/atribuir)
   document.getElementById('mfn-vendedor-wrap').style.display = (isG && tipo !== 'trafego') ? 'block' : 'none';
-  document.getElementById('mfn-sub').textContent = tipo === 'trafego'
+  const _mfnSubEl = document.getElementById('mfn-sub');
+  _mfnSubEl.style.fontFamily = 'var(--font)';
+  _mfnSubEl.textContent = tipo === 'trafego'
     ? 'Entra como "Não atribuído". Nome, contato e qual anúncio trouxe o lead — a distribuição pro vendedor é feita depois.'
     : tipo === 'discadora'
       ? (isG ? 'Escolha o vendedor. Preencha o que ele conseguiu com o lead vindo da discadora/IA.' : 'Atribuído a você. Preencha o que conseguiu com o lead vindo da discadora/IA.')
@@ -7183,7 +7203,7 @@ async function salvarNovoLeadFunil() {
     payload = {
       ...base, origem: _funilLeadTipo, vendedor_id: vendedorEscolhido, etapa: 'contato', tentativas: 1,
       primeiro_contato_ts: agoraIso,
-      interesse: _funilInteresseSel, valor_credito: parseFloat(document.getElementById('mfn-valorcredito').value)||0,
+      interesse: _funilInteresseSel, valor_credito: valorMoedaParaNumero(document.getElementById('mfn-valorcredito').value),
       renda_familiar: parseFloat(document.getElementById('mfn-renda').value)||0,
       decide_compra: document.getElementById('mfn-decide').value,
       parcela_ideal: parseFloat(document.getElementById('mfn-parcela').value)||0,
@@ -7530,7 +7550,7 @@ function verDetalheLeadFunil(leadId) {
     </div>
 
     <div class="form-row cols-2">
-      <div class="form-group"><label>Valor do crédito</label><input type="number" id="mfd-valorcredito" value="${lead.valorCredito||''}"></div>
+      <div class="form-group"><label>Valor do crédito</label><input type="text" inputmode="numeric" id="mfd-valorcredito" value="${formatarValorMoedaInicial(lead.valorCredito)}" oninput="aplicarMascaraMoeda(this)"></div>
       <div class="form-group"><label>Renda familiar</label><input type="number" id="mfd-renda" value="${lead.rendaFamiliar||''}" oninput="atualizarQualificacaoBoxFunil()"></div>
     </div>
 
@@ -7701,7 +7721,7 @@ async function salvarEdicaoLeadFunil(leadId) {
     email: document.getElementById('mfd-email').value.trim(),
     celular: document.getElementById('mfd-celular').value.trim(),
     interesse: _funilDetalheInteresseSel,
-    valor_credito: parseFloat(document.getElementById('mfd-valorcredito').value) || 0,
+    valor_credito: valorMoedaParaNumero(document.getElementById('mfd-valorcredito').value),
     renda_familiar: parseFloat(document.getElementById('mfd-renda').value) || 0,
     decide_compra: document.getElementById('mfd-decide').value,
     parcela_ideal: parseFloat(document.getElementById('mfd-parcela').value) || 0,
