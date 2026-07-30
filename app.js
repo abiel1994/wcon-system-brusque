@@ -6721,6 +6721,56 @@ ${mesNav}
     </div>
   </div>
 </div>
+
+<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1.5px;text-transform:uppercase;margin:24px 0 10px">Relatório do pipeline — ${mesLabel(st.mesSel)}</div>
+
+<div style="display:flex;gap:10px;margin-bottom:14px">
+  <div class="card" style="flex:1;margin-bottom:0">
+    <div class="card-body">
+      <div class="stat-label">Total de leads no mês</div>
+      <div style="font-size:20px;font-weight:800;font-family:var(--mono);margin-top:4px">${leadsDoMes.length}</div>
+    </div>
+  </div>
+  <div class="card" style="flex:1;margin-bottom:0">
+    <div class="card-body">
+      <div class="stat-label">Crédito total em negociação</div>
+      <div style="font-size:20px;font-weight:800;font-family:var(--mono);margin-top:4px">${fmt(leadsDoMes.filter(l=>l.etapa!=='desqualificado').reduce((a,l)=>a+(l.valorCredito||0),0))}</div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>Lead</th><th>Origem</th><th>Crédito</th><th>Vendedor atual</th>
+        <th>Redistribuído</th><th>Etapa atual</th><th>Evolução</th><th>Dias</th>
+      </tr></thead>
+      <tbody>
+        ${leadsDoMes.map(l => {
+          const origemTxt = l.origem === 'trafego' ? `Tráfego${l.anuncioOrigem ? ' · '+l.anuncioOrigem : ''}` : l.origem === 'pessoal' ? 'Pessoal' : 'Discadora/IA';
+          const origemCor = l.origem === 'trafego' ? 'background:#E6F1FB;color:#0C447C' : l.origem === 'pessoal' ? 'background:#F3EEFB;color:#5B21B6' : 'background:var(--ink3);color:var(--text2)';
+          const vendAtual = DB.vendedores.find(v => v.id === l.vendedor)?.nome || '—';
+          const vendAnterior = l.vendedorAnterior ? DB.vendedores.find(v => v.id === l.vendedorAnterior)?.nome : null;
+          const redistribuido = (l.vezesRedistribuido||0) > 0;
+          const etapaLabel = l.etapa === 'desqualificado' ? 'Desqualificado' : (FUNIL_ETAPAS.find(e=>e.key===l.etapa)?.label || l.etapa);
+          const evolucao = (l.historico||[]).map(h => h.etapa === 'desqualificado' ? 'Desqualificado' : (FUNIL_ETAPAS.find(e=>e.key===h.etapa)?.label || h.etapa)).join(' → ') || etapaLabel;
+          const dias = diasAtras ? diasAtras(l.criadoEm) : Math.round((new Date(today()+'T00:00:00') - new Date((l.criadoEm||today())+'T00:00:00'))/86400000);
+          return `<tr onclick="verDetalheLeadFunil('${l.id}')" style="cursor:pointer">
+            <td style="font-weight:600">${l.nome}</td>
+            <td><span class="chip" style="${origemCor};font-size:9px">${origemTxt}</span></td>
+            <td class="td-mono">${fmt(l.valorCredito||0)}</td>
+            <td>${vendAtual}${redistribuido && vendAnterior ? ` <span style="font-size:9px;color:var(--text3)">(era ${vendAnterior})</span>` : ''}</td>
+            <td>${redistribuido ? `<span class="chip" style="background:var(--red-dim);color:var(--brand);font-weight:700;font-size:9px">Sim · ${l.vezesRedistribuido}x</span>` : `<span class="chip" style="font-size:9px">Não</span>`}</td>
+            <td><span class="chip" style="font-size:9px">${etapaLabel}</span></td>
+            <td style="font-size:10px;color:var(--text3)">${evolucao}</td>
+            <td class="td-mono" style="${dias>10?'color:var(--brand);font-weight:700':''}">${dias}</td>
+          </tr>`;
+        }).join('') || `<tr><td colspan="8" class="td-center" style="padding:40px;color:var(--text3)">Nenhum lead neste mês</td></tr>`}
+      </tbody>
+    </table>
+  </div>
+</div>
 `;
 }
 
