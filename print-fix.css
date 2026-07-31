@@ -202,4 +202,32 @@
     margin: 12mm 10mm !important;
     size: A4 portrait !important;
   }
+
+  /* ── NOVO: página em modo PAISAGEM — só pra relatórios largos (tabelas
+     com muitas colunas, tipo o Relatório do Pipeline de Leads). Usa uma
+     página nomeada, então não afeta os demonstrativos normais (que
+     continuam em retrato pela regra acima). ── */
+  @page relatorio-pipeline {
+    size: A4 landscape;
+    margin: 10mm;
+  }
+  .print-paisagem {
+    page: relatorio-pipeline;
+  }
+  .print-paisagem table {
+    width: 100% !important;
+    font-size: 9px !important;
+    table-layout: fixed !important;
+  }
+  .print-paisagem th,
+  .print-paisagem td {
+    padding: 4px 6px !important;
+    font-size: 9px !important;
+    word-break: break-word !important;
+    white-space: normal !important;
+  }
+  .print-paisagem .chip {
+    font-size: 8px !important;
+    padding: 1px 5px !important;
+  }
 }
