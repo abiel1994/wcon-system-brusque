@@ -6742,7 +6742,7 @@ ${mesNav}
   <button class="btn btn-ghost btn-sm no-print" onclick="window.print()">🖨 Imprimir / Exportar PDF</button>
 </div>
 
-<div class="card">
+<div class="card print-paisagem">
   <div class="table-wrap">
     <table>
       <thead><tr>
