@@ -537,6 +537,8 @@ async function carregarDadosIniciais() {
       anuncioOrigem: l.anuncio_origem || '',
       feedbacks: l.feedbacks || [],
       vendaId: l.venda_id || null,
+      statusReuniao1: l.status_reuniao1 || null,
+      statusReuniao2: l.status_reuniao2 || null,
     }));
 
     DB.funilRodizio = { ultimoIndice: rodizio?.ultimo_indice ?? -1 };
