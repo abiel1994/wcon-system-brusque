@@ -29,6 +29,7 @@ const FUNIL_ETAPAS = [
   { key: 'qualificacao',    label: 'Qualificação' },
   { key: 'agendamento',     label: 'Agendamento' },
   { key: 'reuniao1',        label: '1ª Reunião' },
+  { key: 'reuniaoFeita',    label: 'Reunião Feita' },
   { key: 'reuniao2',        label: '2ª Reunião' },
   { key: 'analisando',      label: 'Analisando' },
   { key: 'aguardPagamento', label: 'Aguard. pagamento' },
@@ -44,6 +45,7 @@ const FUNIL_CORES_ETAPA = {
   qualificacao:    { bg: '#F3EEFB', borda: '#8B5CF6' },
   agendamento:     { bg: '#EAF3DE', borda: '#639922' },
   reuniao1:        { bg: '#E6F1FB', borda: '#0C447C' },
+  reuniaoFeita:    { bg: '#EAF3DE', borda: '#639922' },
   reuniao2:        { bg: '#E6F1FB', borda: '#0C447C' },
   analisando:      { bg: '#FFF8E8', borda: '#BA7517' },
   aguardPagamento: { bg: '#FFF8E8', borda: '#BA7517' },
@@ -309,7 +311,7 @@ const AppState = {
 
     tabelas:       { expandida: null, filterRef: 'all' },
     trabalho:      { vendId: null, filterSit: 'all' },
-    funil:         { filtroVend: null, mesSel: null, colunasAbertas: {} },
+    funil:         { filtroVend: null, mesSel: null, colunasAbertas: {}, filtroMesPipeline: null },
     agendaFunil:   { mesCalendario: null, diaSelecionado: null },
     leadsPainel:   { mesSel: null },
     comissaoSupervisor: { mesSel: null, supervisorId: null },
@@ -6005,15 +6007,16 @@ function renderFunil() {
   const metaCredito = FUNIL_META.creditoProspectado * multMeta;
 
   const leadsVisiveis = leadsVisiveisFunil();
-  const mesesDisp = Array.from(new Set([...DB.leadsFunil.map(l => (l.criadoEm||'').substring(0,7)).filter(Boolean), st.mesSel])).sort();
-  const leadsVisiveisMes = leadsVisiveis.filter(l => (l.criadoEm||'').substring(0,7) === st.mesSel);
+  const mesesDisp = Array.from(new Set([...DB.leadsFunil.map(l => (l.criadoEm||'').substring(0,7)).filter(Boolean), todayMes()])).sort();
+  const ehTotal = st.mesSel === 'total';
+  const leadsVisiveisMes = ehTotal ? leadsVisiveis : leadsVisiveis.filter(l => (l.criadoEm||'').substring(0,7) === st.mesSel);
 
   const totalReunioes = leadsVisiveis.filter(l => {
     const d = dataUltimaEtapaFunil(l, FUNIL_ETAPA_REUNIAO_META);
-    return d && d.substring(0,7) === st.mesSel;
+    return d && (ehTotal || d.substring(0,7) === st.mesSel);
   }).length;
 
-  const vendasDoMes = leadsVisiveis.filter(l => l.etapa === 'venda' && (dataUltimaEtapaFunil(l,'venda')||'').substring(0,7) === st.mesSel);
+  const vendasDoMes = leadsVisiveis.filter(l => l.etapa === 'venda' && (ehTotal || (dataUltimaEtapaFunil(l,'venda')||'').substring(0,7) === st.mesSel));
   const totalVendas = vendasDoMes.length;
   const valorVendasTotal = vendasDoMes.reduce((a,l) => a + (l.valorVenda||0), 0);
 
@@ -6030,7 +6033,7 @@ function renderFunil() {
 
   function totalLigacoesVend(vendId) {
     const porDia = DB.funilLigacoes[vendId] || {};
-    return Object.entries(porDia).filter(([d]) => d.substring(0,7) === st.mesSel).reduce((a,[,v]) => a+v, 0);
+    return Object.entries(porDia).filter(([d]) => ehTotal || d.substring(0,7) === st.mesSel).reduce((a,[,v]) => a+v, 0);
   }
   const totalLigacoes = isG
     ? (st.filtroVend ? totalLigacoesVend(st.filtroVend) : DB.vendedores.reduce((a,v) => a+totalLigacoesVend(v.id), 0))
@@ -6053,10 +6056,23 @@ function renderFunil() {
       ${DB.vendedores.map(v => `<option value="${v.id}"${st.filtroVend === v.id ? ' selected' : ''}>${v.nome}</option>`).join('')}
     </select>
   </div>` : '';
-  const mesNavFunil = renderMesNav(mesesDisp, st.mesSel, "AppState.modulo.funil.mesSel", 'funil');
+
+  // NOVO: navegador de mês das Metas ganha um botão extra "Total" (soma tudo,
+  // sem filtrar por mês nenhum)
+  const mesNavFunil = `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+    ${renderMesNav(mesesDisp, ehTotal ? mesesDisp[mesesDisp.length-1] : st.mesSel, "AppState.modulo.funil.mesSel", 'funil')}
+    <button class="btn ${ehTotal?'btn-primary':'btn-ghost'} btn-sm" onclick="AppState.modulo.funil.mesSel='total';rerenderModule('funil')">Total</button>
+  </div>`;
+
+  // NOVO: pipeline agora mostra TODOS os leads por padrão (não filtra mais
+  // pelo mês das Metas) — só filtra se o usuário escolher um mês específico
+  // no seletor próprio do pipeline (filtroMesPipeline)
+  const leadsPipeline = st.filtroMesPipeline
+    ? leadsVisiveis.filter(l => (l.criadoEm||'').substring(0,7) === st.filtroMesPipeline)
+    : leadsVisiveis;
 
   function colunaLeads(etapaKey) {
-    return leadsVisiveisMes.filter(l => l.etapa === etapaKey).sort((a,b) => (b.criadoEm||'').localeCompare(a.criadoEm||''));
+    return leadsPipeline.filter(l => l.etapa === etapaKey).sort((a,b) => (b.criadoEm||'').localeCompare(a.criadoEm||''));
   }
   if (!st.colunasAbertas) st.colunasAbertas = {};
 
@@ -6077,8 +6093,14 @@ function renderFunil() {
     const origCores = origemCores(lead.origem);
     const corEtapa = FUNIL_CORES_ETAPA[lead.etapa] || { bg: 'var(--ink2)', borda: 'var(--line)' };
     const semVendedor = !lead.vendedor;
+    const mesLead = (lead.criadoEm||'').substring(0,7);
+    const mesLeadIdx = mesLead ? parseInt(mesLead.substring(5,7),10)-1 : null;
+    const seloMes = mesLeadIdx != null ? `<span class="chip" style="background:${corEtapa.borda}22;color:${corEtapa.borda};font-size:8px;font-weight:700;flex-shrink:0">${MESES_CURTOS[mesLeadIdx].toUpperCase()}</span>` : '';
     return `<div style="background:#fff;border-radius:8px;padding:10px;margin-bottom:8px;cursor:pointer;border-left:4px solid ${corEtapa.borda};box-shadow:0 1px 3px rgba(0,0,0,0.06)" onclick="verDetalheLeadFunil('${lead.id}')">
-      <div style="font-size:13px;font-weight:700;color:#1A1D24;margin-bottom:2px">${lead.nome}</div>
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;margin-bottom:2px">
+        <div style="font-size:13px;font-weight:700;color:#1A1D24">${lead.nome}</div>
+        ${seloMes}
+      </div>
       ${semVendedor
         ? `<div style="display:inline-flex;align-items:center;gap:4px;background:var(--red-dim);color:var(--brand);font-size:9px;font-weight:700;padding:3px 8px;border-radius:5px;margin-bottom:6px">⚠ Não atribuído</div>`
         : (isG && !st.filtroVend ? `<div style="font-size:10px;color:var(--text3);margin-bottom:6px">${DB.vendedores.find(v=>v.id===lead.vendedor)?.nome || '—'}</div>` : '')}
@@ -6091,7 +6113,12 @@ function renderFunil() {
       </div>` : ''}
       ${semVendedor
         ? `<div onclick="event.stopPropagation()" style="margin-top:9px"><button class="btn btn-primary btn-sm" style="width:100%;font-size:11px;padding:6px" onclick="abrirRedistribuirLeadFunil('${lead.id}')">Atribuir a um vendedor</button></div>`
-        : (proxima ? `<div onclick="event.stopPropagation()" style="display:flex;gap:5px;margin-top:9px">
+        : (lead.etapa === 'reuniao1' || lead.etapa === 'reuniao2')
+          ? `<div onclick="event.stopPropagation()" style="margin-top:9px;padding-top:9px;border-top:1px solid #F0F2F5;display:flex;justify-content:space-between;align-items:center;gap:4px">
+              <span style="font-size:10px;color:#9CA3AF">Marcar na Agenda ↗</span>
+              <button class="btn btn-ghost btn-sm" style="color:var(--brand);font-size:11px;padding:3px 8px" onclick="marcarPerdidoFunil('${lead.id}')">✕</button>
+            </div>`
+          : (proxima ? `<div onclick="event.stopPropagation()" style="display:flex;gap:5px;margin-top:9px">
         <button class="btn btn-ghost btn-sm" style="flex:1;font-size:11px;padding:6px" onclick="moverEtapaFunil('${lead.id}','${proxima}')">→ ${FUNIL_ETAPAS.find(e=>e.key===proxima)?.label}</button>
         <button class="btn btn-ghost btn-sm" style="color:var(--brand);font-size:11px;padding:6px 9px" onclick="marcarPerdidoFunil('${lead.id}')">✕</button>
       </div>` : '')}
@@ -6225,8 +6252,12 @@ ${!isG ? `
 
 <div style="display:flex;justify-content:space-between;align-items:center;margin:20px 0 10px;gap:10px;flex-wrap:wrap">
   <div class="form-divider" style="margin-bottom:0">Pipeline</div>
-  <div style="display:flex;align-items:center;gap:10px">
-    <div style="font-size:11px;color:var(--text3)">${leadsVisiveisMes.filter(l=>l.etapa!=='desqualificado').length} lead(s) ativo(s) · ${fmt(creditoProspectado)} em negociação</div>
+  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    <div style="font-size:11px;color:var(--text3)">${leadsPipeline.filter(l=>l.etapa!=='desqualificado').length} lead(s) ativo(s) · ${fmt(leadsPipeline.filter(l=>l.etapa!=='desqualificado').reduce((a,l)=>a+(l.valorCredito||0),0))} em negociação</div>
+    <select class="form-input" style="width:auto;height:30px;padding:0 8px;font-size:11px" onchange="AppState.modulo.funil.filtroMesPipeline=this.value||null;rerenderModule('funil')">
+      <option value=""${!st.filtroMesPipeline ? ' selected' : ''}>Todos os meses</option>
+      ${mesesDisp.map(m => `<option value="${m}"${st.filtroMesPipeline===m?' selected':''}>${mesLabel(m)}</option>`).join('')}
+    </select>
     <div style="display:flex;gap:4px;background:var(--ink2);border:1px solid var(--line);border-radius:8px;padding:3px">
       <div onclick="rolarPipelineFunil(-1)" style="width:26px;height:26px;display:flex;align-items:center;justify-content:center;color:var(--text);font-size:14px;font-weight:700;border-radius:6px;cursor:pointer">‹</div>
       <div onclick="rolarPipelineFunil(1)" style="width:26px;height:26px;display:flex;align-items:center;justify-content:center;color:var(--text);font-size:14px;font-weight:700;border-radius:6px;cursor:pointer">›</div>
@@ -6543,8 +6574,8 @@ function agendaOrdenadaFunil() {
   const lista = [];
   DB.leadsFunil.forEach(l => {
     const vend = DB.vendedores.find(v => v.id === l.vendedor);
-    if (l.dataReuniao1) lista.push({ leadId: l.id, tipo: '1ª Reunião', nome: l.nome, vendedor: vend?.nome || '—', data: l.dataReuniao1, hora: l.horaReuniao1 || '--:--', requerGestor: !!l.requerGestorReuniao1, requerSupervisor: !!l.requerSupervisorReuniao1 });
-    if (l.dataReuniao2) lista.push({ leadId: l.id, tipo: '2ª Reunião', nome: l.nome, vendedor: vend?.nome || '—', data: l.dataReuniao2, hora: l.horaReuniao2 || '--:--', requerGestor: !!l.requerGestorReuniao2, requerSupervisor: !!l.requerSupervisorReuniao2 });
+    if (l.dataReuniao1) lista.push({ leadId: l.id, tipoKey: 'reuniao1', tipo: '1ª Reunião', nome: l.nome, vendedor: vend?.nome || '—', data: l.dataReuniao1, hora: l.horaReuniao1 || '--:--', requerGestor: !!l.requerGestorReuniao1, requerSupervisor: !!l.requerSupervisorReuniao1, status: l.statusReuniao1 || null });
+    if (l.dataReuniao2) lista.push({ leadId: l.id, tipoKey: 'reuniao2', tipo: '2ª Reunião', nome: l.nome, vendedor: vend?.nome || '—', data: l.dataReuniao2, hora: l.horaReuniao2 || '--:--', requerGestor: !!l.requerGestorReuniao2, requerSupervisor: !!l.requerSupervisorReuniao2, status: l.statusReuniao2 || null });
   });
   lista.sort((a,b) => (a.data+a.hora).localeCompare(b.data+b.hora));
   return lista;
@@ -6620,6 +6651,20 @@ function renderAgendaFunil() {
     <div id="mad-conteudo"></div>
   </div>
 </div>
+
+<div class="overlay" id="m-editar-horario-reuniao" style="z-index:600">
+  <div class="modal" style="max-width:340px">
+    <button class="modal-close" onclick="closeModal('m-editar-horario-reuniao')">✕</button>
+    <div class="modal-title">Reagendar reunião</div>
+    <div class="modal-sub" id="meh-sub"></div>
+    <div class="form-group"><label>Nova data</label><input type="date" id="meh-data"></div>
+    <div class="form-group"><label>Novo horário</label><input type="time" id="meh-hora"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('m-editar-horario-reuniao')">Cancelar</button>
+      <button class="btn btn-primary" onclick="salvarEdicaoHorarioReuniaoFunil()">Salvar novo horário</button>
+    </div>
+  </div>
+</div>
 `;
 }
 
@@ -6631,7 +6676,9 @@ function mudarMesAgendaFunil(delta) {
   rerenderModule('agendaFunil');
 }
 
+let _diaAgendaAtual = null;
 function abrirDiaAgendaFunil(dataStr) {
+  _diaAgendaAtual = dataStr;
   const eventos = agendaOrdenadaFunil().filter(e => e.data === dataStr).sort((a,b) => a.hora.localeCompare(b.hora));
   const CORES = { '1ª Reunião': { bg:'#E6F1FB', cor:'#0C447C' }, '2ª Reunião': { bg:'#EEEDFE', cor:'#26215C' } };
   document.getElementById('mad-conteudo').innerHTML = `
@@ -6639,22 +6686,83 @@ function abrirDiaAgendaFunil(dataStr) {
     <div style="font-size:11px;color:var(--text3);margin-bottom:14px">${eventos.length} reunião(ões) marcada(s)</div>
     ${eventos.length === 0 ? `<div style="text-align:center;padding:20px;color:var(--text3);font-size:12px">Nenhuma reunião nesse dia</div>` : `
     <div style="display:flex;flex-direction:column;gap:6px">
-      ${eventos.map(ev => {
+      ${eventos.map((ev, idx) => {
         const cor = CORES[ev.tipo] || { bg:'var(--ink3)', cor:'var(--text2)' };
-        return `<div style="display:flex;justify-content:space-between;align-items:center;background:var(--ink3);border-radius:6px;padding:8px 10px">
-          <div>
-            <div style="font-size:13px;font-weight:600">${ev.nome}</div>
-            <div style="font-size:10px;color:var(--text3)">
+        const compareceu = ev.status === 'compareceu';
+        const naoCompareceu = ev.status === 'nao_compareceu';
+        const riscado = naoCompareceu ? 'text-decoration:line-through;text-decoration-color:var(--brand)' : '';
+        const bolinha = compareceu
+          ? `<div style="width:26px;height:26px;border-radius:50%;background:var(--green-dim,#EAF3DE);color:#27500A;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;flex-shrink:0">✓</div>`
+          : naoCompareceu
+            ? `<div style="width:26px;height:26px;border-radius:50%;background:var(--red-dim);color:var(--brand);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;flex-shrink:0">✕</div>`
+            : `<div style="width:26px;height:26px;border-radius:50%;background:var(--ink3);border:2px dashed var(--line2);flex-shrink:0"></div>`;
+        return `<div style="display:flex;align-items:center;gap:10px;background:var(--ink3);border-radius:8px;padding:8px 10px;${naoCompareceu?'opacity:0.7':''}">
+          ${bolinha}
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:600;${riscado}">${ev.nome}</div>
+            <div style="font-size:10px;color:var(--text3);${riscado}">
               <span style="background:${cor.bg};color:${cor.cor};padding:1px 6px;border-radius:4px;margin-right:4px">${ev.tipo}</span>
-              ${ev.vendedor}${ev.requerGestor?' 🔒Gestor':''}${ev.requerSupervisor?' 🔒Líder':''}
+              ${ev.hora} · ${ev.vendedor}${ev.requerGestor?' 🔒Gestor':''}${ev.requerSupervisor?' 🔒Líder':''}
             </div>
           </div>
-          <div style="font-size:14px;font-family:var(--mono);font-weight:700">${ev.hora}</div>
+          <div style="display:flex;gap:5px;align-items:center;flex-shrink:0">
+            ${!ev.status ? `
+              <button class="btn btn-ghost btn-sm" style="padding:5px 8px;font-size:11px;background:var(--green-dim,#EAF3DE);color:#27500A;border-color:#97C459" onclick="marcarComparecimentoFunil('${ev.leadId}','${ev.tipoKey}','compareceu')">✓</button>
+              <button class="btn btn-ghost btn-sm" style="padding:5px 8px;font-size:11px;background:var(--red-dim);color:var(--brand);border-color:#E24B4A" onclick="marcarComparecimentoFunil('${ev.leadId}','${ev.tipoKey}','nao_compareceu')">✕</button>
+            ` : `<span style="font-size:9px;color:${compareceu?'#27500A':'var(--brand)'}">${compareceu?'compareceu':'não veio · reagendar'}</span>`}
+            <button class="btn btn-ghost btn-sm btn-icon" style="padding:5px 7px" onclick="abrirEditarHorarioReuniaoFunil('${ev.leadId}','${ev.tipoKey}')" title="Editar data/horário">✎</button>
+          </div>
         </div>`;
       }).join('')}
     </div>`}
   `;
   openModal('m-agenda-dia');
+}
+
+async function marcarComparecimentoFunil(leadId, tipoKey, status) {
+  const lead = DB.leadsFunil.find(l => l.id === leadId);
+  if (!lead) return;
+  const campoStatus = tipoKey === 'reuniao1' ? 'status_reuniao1' : 'status_reuniao2';
+  const novaEtapa = status === 'compareceu'
+    ? (tipoKey === 'reuniao1' ? 'reuniaoFeita' : 'analisando')
+    : 'agendamento';
+  const nota = status === 'compareceu'
+    ? `${tipoKey === 'reuniao1' ? '1ª' : '2ª'} reunião — compareceu`
+    : `${tipoKey === 'reuniao1' ? '1ª' : '2ª'} reunião — não compareceu, voltou pra agendamento`;
+  const historico = [...(lead.historico||[]), { etapa: novaEtapa, data: today(), nota }];
+  await Servicos.atualizarLeadFunil(leadId, { [campoStatus]: status, etapa: novaEtapa, historico_etapas: historico });
+  await carregarDadosIniciais();
+  if (_diaAgendaAtual) abrirDiaAgendaFunil(_diaAgendaAtual);
+  rerenderModule('agendaFunil');
+}
+
+let _editarHorarioTarget = null;
+function abrirEditarHorarioReuniaoFunil(leadId, tipoKey) {
+  const lead = DB.leadsFunil.find(l => l.id === leadId);
+  if (!lead) return;
+  _editarHorarioTarget = { leadId, tipoKey };
+  const data = tipoKey === 'reuniao1' ? lead.dataReuniao1 : lead.dataReuniao2;
+  const hora = tipoKey === 'reuniao1' ? lead.horaReuniao1 : lead.horaReuniao2;
+  document.getElementById('meh-sub').textContent = `${lead.nome} · ${tipoKey === 'reuniao1' ? '1ª Reunião' : '2ª Reunião'}`;
+  document.getElementById('meh-data').value = data || '';
+  document.getElementById('meh-hora').value = hora || '';
+  openModal('m-editar-horario-reuniao');
+}
+
+async function salvarEdicaoHorarioReuniaoFunil() {
+  const { leadId, tipoKey } = _editarHorarioTarget || {};
+  if (!leadId) return;
+  const data = document.getElementById('meh-data').value;
+  const hora = document.getElementById('meh-hora').value;
+  if (!data || !hora) { Dialog.alert('Campos obrigatórios', ['Preencha data e horário.']); return; }
+  const campos = tipoKey === 'reuniao1'
+    ? { data_reuniao1: data, hora_reuniao1: hora }
+    : { data_reuniao2: data, hora_reuniao2: hora };
+  await Servicos.atualizarLeadFunil(leadId, campos);
+  closeModal('m-editar-horario-reuniao');
+  await carregarDadosIniciais();
+  if (_diaAgendaAtual) abrirDiaAgendaFunil(_diaAgendaAtual);
+  rerenderModule('agendaFunil');
 }
 
 function renderLeadsPainelFunil() {
@@ -7593,7 +7701,7 @@ function verDetalheLeadFunil(leadId) {
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;gap:10px">
       <div style="flex:1">
         <input id="mfd-nome" value="${lead.nome}" style="font-size:16px;font-weight:800;border:none;border-bottom:1px dashed var(--line2);background:transparent;padding:2px 0;width:100%" title="Clique pra editar o nome">
-        <div style="font-size:11px;color:var(--text3)">Entrou via ${origemTexto} · ${fmtDate(lead.criadoEm)}</div>
+        <div style="font-size:11px;color:var(--text3)">Entrou via ${origemTexto} · ${fmtDate(lead.criadoEm)} <span style="color:var(--text2);font-weight:600">(${mesLabel((lead.criadoEm||'').substring(0,7))})</span></div>
       </div>
       <select id="mfd-etapa-select" onchange="moverEtapaDiretoFunil('${lead.id}', this.value)" style="width:auto;font-size:11px;padding:4px 8px;flex-shrink:0">
         ${FUNIL_ETAPAS.map(e => `<option value="${e.key}" ${lead.etapa===e.key?'selected':''}>${e.label}</option>`).join('')}
