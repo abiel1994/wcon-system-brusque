@@ -1435,7 +1435,7 @@ function renderDashboard() {
   else if (rankPeriodo === 'semestral')  dataLimite = addMonths(today(), -5)?.substring(0,7) + '-01';
   else if (rankPeriodo === 'anual')      dataLimite = `${hoje.getFullYear()}-01-01`;
 
-  const ranking = DB.vendedores.filter(v => v.role !== 'supervisor').map(v => {
+  const ranking = vendedoresNaUnidade().filter(v => v.role !== 'supervisor').map(v => {
     const vv = DB.vendas.filter(x => x.vendedor === v.id && (!dataLimite || (x.dvenda && x.dvenda >= dataLimite)));
     return { ...v, total: vv.reduce((a, x) => a + x.valor, 0), qtd: vv.length };
   }).sort((a, b) => b.total - a.total);
@@ -1541,14 +1541,14 @@ ${(() => {
 
   const proxMes   = addMonths(todayMes() + '-01', 1)?.substring(0, 7);
 
-  const pendAprov = DB.vendedores.reduce((a, vend) => {
+  const pendAprov = vendedoresNaUnidade().reduce((a, vend) => {
     if (!isG && vend.id !== u.id) return a;
     const vendasV = vendasDoVendedor(vend.id).filter(v => v.status !== 'cancelado');
     const { producao, recorrencia } = calcComissaoMes(vendasV, proxMes);
     return a + producao.reduce((s,i)=>s+i.valor,0) + recorrencia.reduce((s,i)=>s+i.valor,0);
   }, 0);
 
-  const recFutura = DB.vendedores.reduce((a, vend) => {
+  const recFutura = vendedoresNaUnidade().reduce((a, vend) => {
     if (!isG && vend.id !== u.id) return a;
     const vendasV = vendasDoVendedor(vend.id).filter(v => v.status === 'ativo');
     let total = 0;
@@ -2461,7 +2461,7 @@ function abrirCadastroCliente(nomePre = '') {
   const vendRow = document.getElementById('mc-vend-row');
   if (vendRow) vendRow.style.display = isG ? 'block' : 'none';
   if (isG) {
-    document.getElementById('mc-vend').innerHTML = DB.vendedores.map(v=>`<option value="${v.id}">${v.nome}</option>`).join('');
+    document.getElementById('mc-vend').innerHTML = vendedoresNaUnidade().map(v=>`<option value="${v.id}">${v.nome}</option>`).join('');
   }
 
   const tabs = getTabelasVendedor(uid).filter(t => t.ativo !== false);
@@ -2503,7 +2503,7 @@ function abrirNovoContrato(cliId) {
   const vendRow = document.getElementById('mc-vend-row');
   if (vendRow) vendRow.style.display = isG ? 'block' : 'none';
   if (isG) {
-    document.getElementById('mc-vend').innerHTML = DB.vendedores.map(v=>`<option value="${v.id}">${v.nome}</option>`).join('');
+    document.getElementById('mc-vend').innerHTML = vendedoresNaUnidade().map(v=>`<option value="${v.id}">${v.nome}</option>`).join('');
   }
   const tabs = getTabelasVendedor(uid).filter(t => t.ativo !== false);
   document.getElementById('mc-tab').innerHTML = tabs.map(t=>`<option value="${t.id}">${t.id} — ${t.nome} (${t.ref})</option>`).join('');
@@ -2977,7 +2977,7 @@ function abrirNovaVenda() {
   document.getElementById('mv-tab').innerHTML = tabs.map(t => `<option value="${t.id}">${t.nome} (${t.ref})</option>`).join('');
   document.getElementById('mv-vend-row').style.display = isG ? 'grid' : 'none';
   if (isG) {
-    document.getElementById('mv-vend').innerHTML = DB.vendedores.map(v => `<option value="${v.id}">${v.nome}</option>`).join('');
+    document.getElementById('mv-vend').innerHTML = vendedoresNaUnidade().map(v => `<option value="${v.id}">${v.nome}</option>`).join('');
     document.getElementById('mv-vend').onchange = onVendedorChange;
   }
   document.getElementById('mv-preview').innerHTML = '<div style="padding:14px;font-size:11px;color:var(--text3);font-family:var(--mono)">Preencha tabela, valor e datas para ver a projeção...</div>';
@@ -6083,7 +6083,7 @@ function renderFunil() {
 
   // NOVO: quando o gestor vê "Todos os vendedores", a meta escala pela
   // quantidade de gente na equipe (20 reuniões x 5 pessoas = 100, etc.)
-  const multMeta = (isG && !st.filtroVend) ? Math.max(DB.vendedores.length, 1) : 1;
+  const multMeta = (isG && !st.filtroVend) ? Math.max(vendedoresNaUnidade().length, 1) : 1;
   const metaReunioes = FUNIL_META.reunioes * multMeta;
   const metaVendas = FUNIL_META.vendas * multMeta;
   const metaLigacoes = FUNIL_META.ligacoes * multMeta;
@@ -6119,7 +6119,7 @@ function renderFunil() {
     return Object.entries(porDia).filter(([d]) => ehTotal || d.substring(0,7) === st.mesSel).reduce((a,[,v]) => a+v, 0);
   }
   const totalLigacoes = isG
-    ? (st.filtroVend ? totalLigacoesVend(st.filtroVend) : DB.vendedores.reduce((a,v) => a+totalLigacoesVend(v.id), 0))
+    ? (st.filtroVend ? totalLigacoesVend(st.filtroVend) : vendedoresNaUnidade().reduce((a,v) => a+totalLigacoesVend(v.id), 0))
     : totalLigacoesVend(u.id);
 
   const creditoProspectado = leadsVisiveisMes.filter(l => l.etapa !== 'desqualificado').reduce((a,l) => a+(l.valorCredito||0), 0);
@@ -6136,7 +6136,7 @@ function renderFunil() {
     <select class="form-input vendor-filter-select" onchange="AppState.modulo.funil.filtroVend=this.value||null;rerenderModule('funil')">
       <option value=""${!st.filtroVend ? ' selected' : ''}>Todos os vendedores</option>
       <option value="__sem_vendedor__" style="color:var(--brand);font-weight:700"${st.filtroVend==='__sem_vendedor__' ? ' selected' : ''}>⚠ Não atribuído (${_leadsSemVendedor})</option>
-      ${DB.vendedores.map(v => `<option value="${v.id}"${st.filtroVend === v.id ? ' selected' : ''}>${v.nome}</option>`).join('')}
+      ${vendedoresNaUnidade().map(v => `<option value="${v.id}"${st.filtroVend === v.id ? ' selected' : ''}>${v.nome}</option>`).join('')}
     </select>
   </div>` : '';
 
@@ -6387,7 +6387,7 @@ function toggleFunilDetalhe(idBase) {
 }
 
 function renderPainelExecutivoFunil() {
-  const leads = DB.leadsFunil;
+  const leads = leadsFunilDaUnidade();
   const hojeStr = today();
   const mesAtualStr = todayMes();
 
@@ -6425,7 +6425,7 @@ function renderPainelExecutivoFunil() {
   const volumeVendidoMes = leads.filter(l => { const d = dataUltimaEtapa(l,'venda'); return d && d.substring(0,7) === mesAtualStr; }).reduce((a,l) => a+(l.valorVenda||0), 0);
 
   const totalVendasMes = leads.filter(l => { const d = dataUltimaEtapa(l,'venda'); return d && d.substring(0,7) === mesAtualStr; }).length;
-  const metaVendasEquipe = FUNIL_META.vendas * Math.max(DB.vendedores.length, 1);
+  const metaVendasEquipe = FUNIL_META.vendas * Math.max(vendedoresNaUnidade().length, 1);
   const metaAtingidaPct = Math.min((totalVendasMes/metaVendasEquipe)*100, 999);
 
   const funilCaptacao = ['lead','contato','qualificacao','agendamento','reuniao1'].map(k => ({
@@ -6653,9 +6653,17 @@ ${gargalo && pontoForte ? `
 `;
 }
 
+// NOVO: leads do funil já filtrados pela unidade em foco — usado nas telas
+// exclusivas de gestor (Agenda, Painel Executivo, Painel de Leads) que não
+// usam o filtro de vendedor do módulo Funil, só a unidade
+function leadsFunilDaUnidade() {
+  const unidade = unidadeEscopoAtual();
+  return unidade ? DB.leadsFunil.filter(l => l.unidade === unidade) : DB.leadsFunil;
+}
+
 function agendaOrdenadaFunil() {
   const lista = [];
-  DB.leadsFunil.forEach(l => {
+  leadsFunilDaUnidade().forEach(l => {
     const vend = DB.vendedores.find(v => v.id === l.vendedor);
     if (l.dataReuniao1) lista.push({ leadId: l.id, tipoKey: 'reuniao1', tipo: '1ª Reunião', nome: l.nome, vendedor: vend?.nome || '—', data: l.dataReuniao1, hora: l.horaReuniao1 || '--:--', requerGestor: !!l.requerGestorReuniao1, requerSupervisor: !!l.requerSupervisorReuniao1, status: l.statusReuniao1 || null });
     if (l.dataReuniao2) lista.push({ leadId: l.id, tipoKey: 'reuniao2', tipo: '2ª Reunião', nome: l.nome, vendedor: vend?.nome || '—', data: l.dataReuniao2, hora: l.horaReuniao2 || '--:--', requerGestor: !!l.requerGestorReuniao2, requerSupervisor: !!l.requerSupervisorReuniao2, status: l.statusReuniao2 || null });
@@ -6898,10 +6906,10 @@ function renderTransferenciasUnidade() {
 function renderLeadsPainelFunil() {
   const st = AppState.modulo.leadsPainel;
   if (!st.mesSel) st.mesSel = todayMes();
-  const mesesDisp = Array.from(new Set([...DB.leadsFunil.map(l => (l.criadoEm||'').substring(0,7)).filter(Boolean), st.mesSel])).sort();
+  const mesesDisp = Array.from(new Set([...leadsFunilDaUnidade().map(l => (l.criadoEm||'').substring(0,7)).filter(Boolean), st.mesSel])).sort();
   const mesNav = renderMesNav(mesesDisp, st.mesSel, "AppState.modulo.leadsPainel.mesSel", 'leadsPainel');
 
-  const leadsDoMes = DB.leadsFunil.filter(l => (l.criadoEm||'').substring(0,7) === st.mesSel);
+  const leadsDoMes = leadsFunilDaUnidade().filter(l => (l.criadoEm||'').substring(0,7) === st.mesSel);
   const recebidos     = leadsDoMes.length;
   const trabalhados   = leadsDoMes.filter(l => l.etapa !== 'lead').length;
   const convertidos   = leadsDoMes.filter(l => l.etapa === 'venda').length;
@@ -7397,7 +7405,7 @@ function renderModaisFunil() {
     <div class="form-group">
       <label>Vendedor</label>
       <select id="mfl-vendedor-select" onchange="carregarLigacoesDoVendedor()">
-        ${DB.vendedores.map(v => `<option value="${v.id}">${v.nome}</option>`).join('')}
+        ${vendedoresNaUnidade().map(v => `<option value="${v.id}">${v.nome}</option>`).join('')}
       </select>
     </div>
     <div id="mfl-lista" style="max-height:280px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;margin-top:10px"></div>
