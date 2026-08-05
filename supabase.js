@@ -409,6 +409,7 @@ async function carregarDadosIniciais() {
       ref:      t.ref,
       parcelas: Array.isArray(t.parcelas) ? t.parcelas : JSON.parse(t.parcelas || '[]'),
       ativo:    t.ativo !== false,
+      unidade:  t.unidade || 'brusque',
     }));
 
     // ── Comissão de gerência por produto (com/sem líder de equipe) ──────────
