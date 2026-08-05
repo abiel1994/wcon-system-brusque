@@ -621,17 +621,24 @@ function vendorName(id) {
    ═══════════════════════════════════════════════════════════════════════════ */
 function vendasNoEscopo(u) {
   const isG = (u.role === 'gestor' || u.role === 'adm');
-  if (isG) return DB.vendas;
+  // NOVO: venda "pertence" à unidade do vendedor dela — filtra pela unidade
+  // em foco (seletor do gestor master, ou a própria unidade de quem loga)
+  const unidade = unidadeEscopoAtual();
+  const vendaNaUnidade = v => {
+    if (!unidade) return true;
+    return (DB.vendedores.find(x => x.id === v.vendedor)?.unidade || 'brusque') === unidade;
+  };
+  if (isG) return DB.vendas.filter(vendaNaUnidade);
   if (u.role === 'supervisor') {
     const idsEquipe = DB.vendedores.filter(v => v.liderId === u.id).map(v => v.id);
-    return DB.vendas.filter(v => v.vendedor === u.id || idsEquipe.includes(v.vendedor));
+    return DB.vendas.filter(v => (v.vendedor === u.id || idsEquipe.includes(v.vendedor)) && vendaNaUnidade(v));
   }
-  return DB.vendas.filter(v => v.vendedor === u.id);
+  return DB.vendas.filter(v => v.vendedor === u.id && vendaNaUnidade(v));
 }
 
 function vendedoresNoEscopo(u) {
   const isG = (u.role === 'gestor' || u.role === 'adm');
-  if (isG) return DB.vendedores;
+  if (isG) return vendedoresNaUnidade();
   if (u.role === 'supervisor') {
     return DB.vendedores.filter(v => v.id === u.id || v.liderId === u.id);
   }
@@ -990,7 +997,8 @@ const Notificacoes = {
     const hoje  = today();
 
     if (isGestor) {
-      DB.vendas.filter(v => v.regularizacao?.status === 'pendente').forEach(v => {
+      const vendasBase = vendasNoEscopo(AppState.user);
+      vendasBase.filter(v => v.regularizacao?.status === 'pendente').forEach(v => {
         lista.push({
           id:    `regul-${v.id}`,
           tipo:  'regularizacao',
@@ -1003,7 +1011,7 @@ const Notificacoes = {
         });
       });
 
-      DB.vendas.forEach(v => {
+      vendasBase.forEach(v => {
         v.parcelas.forEach((p, i) => {
           if (p.s !== 'aguard_aprov') return;
           const parc = calcParcelas(v)[i];
@@ -1019,7 +1027,7 @@ const Notificacoes = {
         });
       });
 
-      DB.vendas.filter(v => v.status === 'inadimplente').forEach(v => {
+      vendasBase.filter(v => v.status === 'inadimplente').forEach(v => {
         const dias = diasAtras(v.dataInad || hoje);
         if (dias > 60) {
           lista.push({
@@ -1034,7 +1042,7 @@ const Notificacoes = {
         }
       });
 
-      DB.vendas.filter(v => v.estorno && !v.estorno.autorizado).forEach(v => {
+      vendasBase.filter(v => v.estorno && !v.estorno.autorizado).forEach(v => {
         lista.push({
           id:    `estorno-${v.id}`,
           tipo:  'estorno',
@@ -1258,9 +1266,10 @@ function buildSidebar() {
       ? ['dashboard','trabalho','funil','agendaFunil','relatorio','comissao','comissaoLideranca','inadimplencia','estornos','tabelas']
       : ['dashboard','trabalho','funil','agendaFunil','relatorio','comissao','inadimplencia','estornos','tabelas'];
 
+  const vendasEscopoBadge = vendasNoEscopo(u);
   const badges = {
-    inadimplencia: DB.vendas.filter(v => v.status === 'inadimplente' && (isG ? true : vendasNoEscopo(u).some(x=>x.id===v.id))).length,
-    estornos: DB.vendas.filter(v => v.estorno && !v.estorno.autorizado && (isG ? true : vendasNoEscopo(u).some(x=>x.id===v.id))).length,
+    inadimplencia: vendasEscopoBadge.filter(v => v.status === 'inadimplente').length,
+    estornos: vendasEscopoBadge.filter(v => v.estorno && !v.estorno.autorizado).length,
   };
 
   // NOVO: seções do menu são colapsáveis — fechadas por padrão, o usuário
@@ -5071,7 +5080,7 @@ function calcRemuneracaoMes(mes) {
   const producao    = [];
   const recorrencia = [];
 
-  DB.vendas.forEach(v => {
+  vendasNoEscopo({ role: 'gestor' }).forEach(v => {
     if (v.status === 'cancelado') return;
     const tab = DB.tabelas.find(t => t.id === v.tabela);
     const regra = DB.tabelasComissaoGerencia.find(g => g.tabela_id === v.tabela);
@@ -5162,7 +5171,7 @@ function renderRemuneracao() {
   const st = AppState.modulo.remuneracao;
 
   const mesesSet = new Set();
-  DB.vendas.forEach(v => {
+  vendasNoEscopo({ role: 'gestor' }).forEach(v => {
     if (v.status === 'cancelado') return;
     calcParcelas(v).forEach(p => {
       if (p.ativa && p.n <= 2) mesesSet.add(p.mesRecebimento);
@@ -5182,7 +5191,7 @@ function renderRemuneracao() {
   const vRec  = recorrencia.reduce((a, i) => a + i.valor, 0);
   const { vProdFinal, vRecFinal, vLiqFinal: vLiq, origensMinimo, origensBloqueado } = aplicarTravaGestor(st.mesSel, producao, recorrencia);
 
-  const vendasDoMes = DB.vendas.filter(v => mesKey(v.dvenda) === st.mesSel);
+  const vendasDoMes = vendasNoEscopo({ role: 'gestor' }).filter(v => mesKey(v.dvenda) === st.mesSel);
   const totalVendidoMes = vendasDoMes.reduce((a, v) => a + v.valor, 0);
 
   const acumPago     = DB.fechamentosGestor.filter(f => f.status === 'pago')
@@ -5191,7 +5200,7 @@ function renderRemuneracao() {
       return a + aplicarTravaGestor(f.mes, p, r).vLiqFinal;
     }, 0);
 
-  const totalCredEquipe = DB.vendas
+  const totalCredEquipe = vendasNoEscopo({ role: 'gestor' })
     .filter(v => v.status !== 'cancelado')
     .reduce((a, v) => a + v.valor, 0);
 
