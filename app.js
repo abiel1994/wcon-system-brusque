@@ -302,6 +302,7 @@ function atualizarParcelasAtrasadas() {
 const AppState = {
   user: null,
   currentModule: null,
+  unidadeVisualizacao: null, // NOVO: seletor manual do gestor master — null = "Ambas", ou 'brusque'/'blumenau'
   modulo: {
     relatorio:     { mesSel: null, filterStatus: 'all', filterVend: null, sortCol: null, sortDir: 'asc', busca: '' },
     comissao:      { mesSel: null, filterVend: null },
@@ -534,15 +535,22 @@ function calcEstornosMes(vendas, mes) {
 }
 
 function getTabelasVendedor(uid) {
-  if (!uid || uid === 'gestor') return DB.tabelas;
+  // NOVO: cada unidade tem seus próprios percentuais nas mesmas tabelas —
+  // filtra primeiro pela unidade do vendedor (ou do escopo de quem está
+  // olhando, se for o gestor). Se não tiver unidade definida (gestor master
+  // vendo "Ambas"), NÃO filtra — mostra tabelas das duas unidades.
+  const vendUid = DB.vendedores.find(v => v.id === uid);
+  const unidadeAlvo = vendUid?.unidade || unidadeEscopoAtual();
+  const tabelasDaUnidade = unidadeAlvo ? DB.tabelas.filter(t => (t.unidade || 'brusque') === unidadeAlvo) : DB.tabelas;
+
+  if (!uid || uid === 'gestor') return tabelasDaUnidade;
   const porId = (DB.acessoTabelas[uid] || []);
-  if (porId.length > 0) return DB.tabelas.filter(t => porId.includes(t.id));
-  const vend = DB.vendedores.find(v => v.id === uid);
-  if (vend) {
-    const porEmail = (DB.acessoTabelas[vend.email] || DB.acessoTabelas[vend.nome?.toLowerCase().split(' ')[0]] || []);
-    if (porEmail.length > 0) return DB.tabelas.filter(t => porEmail.includes(t.id));
+  if (porId.length > 0) return tabelasDaUnidade.filter(t => porId.includes(t.id));
+  if (vendUid) {
+    const porEmail = (DB.acessoTabelas[vendUid.email] || DB.acessoTabelas[vendUid.nome?.toLowerCase().split(' ')[0]] || []);
+    if (porEmail.length > 0) return tabelasDaUnidade.filter(t => porEmail.includes(t.id));
   }
-  return DB.tabelas;
+  return tabelasDaUnidade;
 }
 
 /* ── Lógica de Estorno / Inadimplência ───────────────────────────────────── */
@@ -1184,6 +1192,28 @@ function abrirNotificacoes() {
 /* ═══════════════════════════════════════════════════════════════════════════
    6. SHELL — Header + Sidebar
    ═══════════════════════════════════════════════════════════════════════════ */
+// NOVO: seletor de unidade no header — só aparece pro gestor master (sem
+// unidadeEscopo). Deixa ele escolher "Brusque só", "Blumenau só" ou "Ambas".
+function atualizarSeletorUnidade() {
+  const u = AppState.user;
+  const wrap = document.getElementById('unidade-switch-wrap');
+  if (!wrap) return;
+  if (!u || u.role !== 'gestor' && u.role !== 'adm' || u.unidadeEscopo) { wrap.innerHTML = ''; return; }
+
+  const atual = AppState.unidadeVisualizacao || 'todas';
+  const opcoes = [['todas','Ambas'],['brusque','Brusque'],['blumenau','Blumenau']];
+  wrap.innerHTML = `<div style="display:flex;gap:2px;background:var(--ink3);border-radius:8px;padding:3px;margin-right:6px">
+    ${opcoes.map(([val,lbl]) => `<div onclick="trocarUnidadeVisualizacao('${val}')" style="padding:5px 10px;font-size:10px;font-weight:700;border-radius:6px;cursor:pointer;${atual===val?'background:var(--brand);color:#fff':'color:var(--text3)'}">${lbl}</div>`).join('')}
+  </div>`;
+}
+
+function trocarUnidadeVisualizacao(valor) {
+  AppState.unidadeVisualizacao = valor === 'todas' ? null : valor;
+  atualizarSeletorUnidade();
+  buildSidebar();
+  if (AppState.currentModule) rerenderModule(AppState.currentModule);
+}
+
 function buildShell() {
   const u = AppState.user;
   const isG = (u.role === 'gestor' || u.role === 'adm');
@@ -1195,6 +1225,7 @@ function buildShell() {
     : initials(u.nome);
 
   buildSidebar();
+  atualizarSeletorUnidade();
 
   atualizarSino();
 
@@ -5984,7 +6015,13 @@ ${seletor}
 function unidadeEscopoAtual() {
   const u = AppState.user;
   if (!u) return null;
-  return u.unidadeEscopo || (DB.vendedores.find(v => v.id === u.id)?.unidade) || null;
+  // Usuário travado numa unidade (gerente de Blumenau, ou vendedor/supervisor comum)
+  if (u.unidadeEscopo) return u.unidadeEscopo;
+  const propriaUnidade = DB.vendedores.find(v => v.id === u.id)?.unidade;
+  if (propriaUnidade) return propriaUnidade;
+  // NOVO: gestor master pode escolher manualmente "ver só Brusque" ou "só
+  // Blumenau" — se não escolher nada (ou escolher "Ambas"), vê tudo (null)
+  return AppState.unidadeVisualizacao || null;
 }
 
 // NOVO: lista de vendedores respeitando o escopo de unidade de quem está logado
