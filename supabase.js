@@ -383,6 +383,7 @@ async function carregarDadosIniciais() {
       dataEntrada:  v.data_entrada ? String(v.data_entrada).substring(0,10) : null,
       modelo:       v.modelo || 'modelo1',
       liderId:      v.lider_id || null, // quem é o líder de equipe dele (null = reporta direto ao gestor)
+      unidade:      v.unidade || 'brusque',
       primeiroAcesso: v.primeiro_acesso !== false,
       foto:         v.foto_url || null,
     }));
@@ -539,6 +540,9 @@ async function carregarDadosIniciais() {
       vendaId: l.venda_id || null,
       statusReuniao1: l.status_reuniao1 || null,
       statusReuniao2: l.status_reuniao2 || null,
+      unidade: l.unidade || 'brusque',
+      unidadeOrigem: l.unidade_origem || null,
+      transferenciasUnidade: l.transferencias_unidade || [],
     }));
 
     DB.funilRodizio = { ultimoIndice: rodizio?.ultimo_indice ?? -1 };
