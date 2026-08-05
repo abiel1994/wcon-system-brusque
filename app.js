@@ -651,6 +651,7 @@ const Router = {
 
     painelExecutivo: { label: 'Painel Executivo', icon: '', section: 'gestor', render: renderPainelExecutivoFunil },
     leadsPainel:   { label: 'Leads', icon: '', section: 'gestor', render: renderLeadsPainelFunil },
+    transferenciasUnidade: { label: 'Transferências entre Unidades', icon: '', section: 'gestor', render: renderTransferenciasUnidade },
 
     tabelas:       { label: 'Tabelas',       icon: '≡', section: 'configuracao', render: renderTabelas },
     configuracoes: { label: 'Configurações', icon: '⊙', section: 'configuracao', render: renderConfiguracoes },
@@ -694,6 +695,9 @@ const GESTOR_USERS = [
   { email: 'julia.brusque@embracon.com.br', nome: 'Julia' },
   { email: 'fernando.brusque@embracon.com.br', nome: 'Fernando' },
   { email: 'capital8.consultoria@gmail.com', nome: 'Rosangela' },
+  // NOVO: Gerente de Blumenau — mesmo acesso de gestor, mas RESTRITO só à
+  // unidade dele (unidadeEscopo). Sem esse campo = gestor master, vê tudo.
+  // { email: 'gerente.blumenau@exemplo.com', nome: 'Nome do Gerente', unidadeEscopo: 'blumenau' },
 ];
 
 // NOVO: cada ADM tem o próprio nome (antes o nome "Lilia" estava fixo pra
@@ -710,7 +714,7 @@ function resolveUserByEmail(authUser) {
   const meta = (authUser && authUser.user_metadata) || {};
   const gestorUser = GESTOR_USERS.find(g => g.email.toLowerCase() === authEmail);
   if (gestorUser) {
-    return { id: authId || 'gestor', nome: gestorUser.nome, email: authEmail, role: 'gestor', foto: meta.foto_url || null };
+    return { id: authId || 'gestor', nome: gestorUser.nome, email: authEmail, role: 'gestor', unidadeEscopo: gestorUser.unidadeEscopo || null, foto: meta.foto_url || null };
   }
   const admUser = ADM_USERS.find(a => a.email.toLowerCase() === authEmail);
   if (admUser) {
@@ -1218,7 +1222,7 @@ function buildSidebar() {
   };
 
   const visibles = isG
-    ? ['dashboard','trabalho','vendedores','clientes','funil','agendaFunil','relatorio','comissao','comissaoLideranca','inadimplencia','estornos','painelExecutivo','leadsPainel','tabelas','configuracoes']
+    ? ['dashboard','trabalho','vendedores','clientes','funil','agendaFunil','relatorio','comissao','comissaoLideranca','inadimplencia','estornos','painelExecutivo','leadsPainel',...(!u.unidadeEscopo?['transferenciasUnidade']:[]),'tabelas','configuracoes']
     : isSup
       ? ['dashboard','trabalho','funil','agendaFunil','relatorio','comissao','comissaoLideranca','inadimplencia','estornos','tabelas']
       : ['dashboard','trabalho','funil','agendaFunil','relatorio','comissao','inadimplencia','estornos','tabelas'];
@@ -1894,12 +1898,24 @@ async function definirMetaVendedor(vendedorId) {
 function abrirNovoVendedor() {
   document.getElementById('nv-nome').value = '';
   document.getElementById('nv-email').value = '';
+  const unidadeEscopo = unidadeEscopoAtual();
+  const wrap = document.getElementById('nv-unidade-wrap');
+  if (unidadeEscopo) {
+    // Gerente de unidade (ex: Blumenau) não escolhe — sempre cadastra na
+    // própria unidade dele
+    wrap.style.display = 'none';
+    document.getElementById('nv-unidade').value = unidadeEscopo;
+  } else {
+    wrap.style.display = 'block';
+    document.getElementById('nv-unidade').value = 'brusque';
+  }
   openModal('m-vendedor');
 }
 
 async function salvarNovoVendedor() {
   const nome  = document.getElementById('nv-nome').value.trim();
   const email = document.getElementById('nv-email').value.trim();
+  const unidade = document.getElementById('nv-unidade').value || unidadeEscopoAtual() || 'brusque';
 
   if (!nome)  { Dialog.alert('Campo obrigatório', ['Informe o nome do vendedor.']); return; }
   if (!email) { Dialog.alert('Campo obrigatório', ['Informe o e-mail do vendedor.']); return; }
@@ -1912,10 +1928,10 @@ async function salvarNovoVendedor() {
   if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
 
   try {
-    const data = await Servicos.salvarVendedor({ nome, email, ativo: true, primeiro_acesso: true });
+    const data = await Servicos.salvarVendedor({ nome, email, ativo: true, primeiro_acesso: true, unidade });
     if (!data) throw new Error('Não foi possível salvar o vendedor no banco de dados.');
 
-    DB.vendedores.push({ id: data.id, nome, email, modelo: 'modelo1', role: 'vendedor', primeiroAcesso: true });
+    DB.vendedores.push({ id: data.id, nome, email, modelo: 'modelo1', unidade, primeiroAcesso: true });
 
     closeModal('m-vendedor');
     Dialog.success('Vendedor cadastrado', [
@@ -1938,7 +1954,7 @@ function renderVendedores() {
   const u = AppState.user;
   const isGestorPuro = (u.role === 'gestor' || u.role === 'adm');
 
-  const rows = DB.vendedores.map(v => {
+  const rows = vendedoresNaUnidade().map(v => {
     const vendas = DB.vendas.filter(x => x.vendedor === v.id && x.status !== 'cancelado');
     const total  = vendas.reduce((a, x) => a + x.valor, 0);
     const inadim = vendas.filter(x => x.status === 'inadimplente').length;
@@ -1955,7 +1971,7 @@ function renderVendedores() {
         <div style="display:flex;align-items:center;gap:10px">
           <div style="width:30px;height:30px;border-radius:8px;background:var(--gold-dim);border:1px solid var(--gold-glow);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--gold);overflow:hidden">${v.foto ? `<img src="${v.foto}" style="width:100%;height:100%;object-fit:cover">` : initials(v.nome)}</div>
           <div>
-            <div style="font-weight:600;font-size:13px">${v.nome}${DB.vendedores.some(x=>x.liderId===v.id) ? ' <span class="badge badge-purple" style="font-size:8px">LÍDER DE EQUIPE</span>' : ''}</div>
+            <div style="font-weight:600;font-size:13px">${v.nome}${v.unidade==='blumenau' ? ' <span class="badge" style="font-size:8px;background:#EEEDFE;color:#26215C">BLUMENAU</span>' : ''}${DB.vendedores.some(x=>x.liderId===v.id) ? ' <span class="badge badge-purple" style="font-size:8px">LÍDER DE EQUIPE</span>' : ''}</div>
             ${v.liderId ? `<div style="font-size:10px;color:var(--text3)">reporta a: ${DB.vendedores.find(x=>x.id===v.liderId)?.nome || '—'}</div>` : ''}
             <div style="font-size:11px;color:var(--text3);font-family:var(--mono)">${v.email}</div>
           </div>
@@ -1999,7 +2015,7 @@ function renderVendedores() {
 <div class="page-header">
   <div>
     <div class="page-title">Vendedores</div>
-    <div class="page-sub">// equipe comercial · ${DB.vendedores.length} cadastrados</div>
+    <div class="page-sub">// equipe comercial · ${vendedoresNaUnidade().length} cadastrados</div>
   </div>
   <div class="page-actions">
     ${isGestorPuro ? `<button class="btn btn-primary btn-sm" onclick="abrirNovoVendedor()">+ Novo vendedor</button>` : ''}
@@ -2046,6 +2062,15 @@ function renderVendedores() {
     </div>
     <div class="form-row cols-1">
       <div class="form-group"><label>E-mail *</label><input type="email" id="nv-email" placeholder="email@exemplo.com"></div>
+    </div>
+    <div class="form-row cols-1" id="nv-unidade-wrap">
+      <div class="form-group">
+        <label>Unidade</label>
+        <select id="nv-unidade">
+          <option value="brusque">Brusque</option>
+          <option value="blumenau">Blumenau</option>
+        </select>
+      </div>
     </div>
     <div class="form-row cols-1">
       <div class="form-group">
@@ -5954,15 +5979,36 @@ ${seletor}
 /* ═══════════════════════════════════════════════════════════════════════════
    FUNIL DE ATENDIMENTO
    ═══════════════════════════════════════════════════════════════════════════ */
+// NOVO: retorna a unidade do usuário logado (gestor com unidadeEscopo, ou a
+// unidade do próprio vendedor/supervisor) — null = gestor master, vê tudo
+function unidadeEscopoAtual() {
+  const u = AppState.user;
+  if (!u) return null;
+  return u.unidadeEscopo || (DB.vendedores.find(v => v.id === u.id)?.unidade) || null;
+}
+
+// NOVO: lista de vendedores respeitando o escopo de unidade de quem está logado
+function vendedoresNaUnidade() {
+  const unidade = unidadeEscopoAtual();
+  return unidade ? DB.vendedores.filter(v => v.unidade === unidade) : DB.vendedores;
+}
+
 function leadsVisiveisFunil() {
   const u = AppState.user;
   const isG = (u.role === 'gestor' || u.role === 'adm');
   const st = AppState.modulo.funil;
+
+  // NOVO: escopo de unidade — gestor com unidadeEscopo (ex: Gerente de
+  // Blumenau) só vê leads da unidade dele. Gestor master (sem unidadeEscopo)
+  // vê tudo, de todas as unidades.
+  const unidadeAtual = unidadeEscopoAtual();
+  const base = unidadeAtual ? DB.leadsFunil.filter(l => l.unidade === unidadeAtual) : DB.leadsFunil;
+
   if (isG) {
-    if (st.filtroVend === '__sem_vendedor__') return DB.leadsFunil.filter(l => !l.vendedor);
-    return st.filtroVend ? DB.leadsFunil.filter(l => l.vendedor === st.filtroVend) : DB.leadsFunil;
+    if (st.filtroVend === '__sem_vendedor__') return base.filter(l => !l.vendedor);
+    return st.filtroVend ? base.filter(l => l.vendedor === st.filtroVend) : base;
   }
-  return DB.leadsFunil.filter(l => l.vendedor === u.id);
+  return base.filter(l => l.vendedor === u.id);
 }
 
 function dataUltimaEtapaFunil(lead, etapaAlvo) {
@@ -6765,6 +6811,53 @@ async function salvarEdicaoHorarioReuniaoFunil() {
   rerenderModule('agendaFunil');
 }
 
+// NOVO: relatório de transferências entre unidades — só o gestor master
+// (sem unidadeEscopo) consegue ver essa duplicidade/rastro. Pra unidade de
+// destino, o lead aparece normal, sem indicar de onde veio.
+function renderTransferenciasUnidade() {
+  const u = AppState.user;
+  const isG = (u.role === 'gestor' || u.role === 'adm');
+  if (!isG || u.unidadeEscopo) {
+    return `<div class="page-header"><div class="page-title">Acesso restrito</div></div>`;
+  }
+
+  const leadsTransferidos = DB.leadsFunil.filter(l => (l.transferenciasUnidade||[]).length > 0);
+  const nomeUnidade = un => un === 'blumenau' ? 'Blumenau' : 'Brusque';
+
+  const rows = leadsTransferidos.map(l => {
+    const vendAtual = DB.vendedores.find(v => v.id === l.vendedor)?.nome || '—';
+    const ultimaTransf = l.transferenciasUnidade[l.transferenciasUnidade.length-1];
+    return `<tr onclick="verDetalheLeadFunil('${l.id}')" style="cursor:pointer">
+      <td style="font-weight:600">${l.nome}</td>
+      <td><span class="chip" style="font-size:9px">${nomeUnidade(l.unidadeOrigem)}</span></td>
+      <td><span class="chip" style="background:#EEEDFE;color:#26215C;font-size:9px">${nomeUnidade(l.unidade)}</span></td>
+      <td class="td-mono">${fmt(l.valorCredito||0)}</td>
+      <td>${vendAtual}</td>
+      <td style="font-size:10px;color:var(--text3)">${(l.transferenciasUnidade||[]).map(t=>`${fmtDate(t.data)}: ${nomeUnidade(t.de)}→${nomeUnidade(t.para)} (${t.por})`).join('; ')}</td>
+    </tr>`;
+  }).join('');
+
+  return `
+<div class="page-header">
+  <div>
+    <div class="page-title">Transferências entre Unidades</div>
+    <div class="page-sub">// visível só pro gestor master · ${leadsTransferidos.length} lead(s) transferido(s)</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>Lead</th><th>Unidade origem</th><th>Unidade atual</th><th>Crédito</th><th>Vendedor atual</th><th>Histórico</th>
+      </tr></thead>
+      <tbody>${rows || `<tr><td colspan="6" class="td-center" style="padding:40px;color:var(--text3)">Nenhuma transferência entre unidades ainda</td></tr>`}</tbody>
+    </table>
+  </div>
+</div>
+`;
+}
+
 function renderLeadsPainelFunil() {
   const st = AppState.modulo.leadsPainel;
   if (!st.mesSel) st.mesSel = todayMes();
@@ -7121,7 +7214,7 @@ function renderModaisFunil() {
     <div id="mfn-vendedor-wrap" class="form-group" style="display:none">
       <label>Vendedor</label>
       <select id="mfn-vendedor-select">
-        ${DB.vendedores.map(v => `<option value="${v.id}">${v.nome}</option>`).join('')}
+        ${vendedoresNaUnidade().map(v => `<option value="${v.id}">${v.nome}</option>`).join('')}
       </select>
     </div>
     <div class="form-row cols-2">
@@ -7371,11 +7464,13 @@ async function salvarNovoLeadFunil() {
   if (isG && !vendedorEscolhido) { const e = document.getElementById('mfn-erro'); e.textContent = 'Cadastre pelo menos um vendedor antes.'; e.style.display='block'; btn.disabled=false; btn.textContent='Criar lead'; return; }
 
   if (_funilLeadTipo === 'trafego') {
-    payload = { ...base, origem: 'trafego', anuncio_origem: _funilAnuncioSel, vendedor_id: null, etapa: 'lead', tentativas: 0, historico_etapas: [{ etapa:'lead', data: today() }] };
+    const unidadeLead = unidadeEscopoAtual() || 'brusque';
+    payload = { ...base, origem: 'trafego', anuncio_origem: _funilAnuncioSel, vendedor_id: null, etapa: 'lead', tentativas: 0, unidade: unidadeLead, historico_etapas: [{ etapa:'lead', data: today() }] };
   } else {
     const agoraIso = new Date().toISOString();
+    const unidadeLead = DB.vendedores.find(v => v.id === vendedorEscolhido)?.unidade || unidadeEscopoAtual() || 'brusque';
     payload = {
-      ...base, origem: _funilLeadTipo, vendedor_id: vendedorEscolhido, etapa: 'contato', tentativas: 1,
+      ...base, origem: _funilLeadTipo, vendedor_id: vendedorEscolhido, etapa: 'contato', tentativas: 1, unidade: unidadeLead,
       primeiro_contato_ts: agoraIso,
       interesse: _funilInteresseSel, valor_credito: valorMoedaParaNumero(document.getElementById('mfn-valorcredito').value),
       renda_familiar: parseFloat(document.getElementById('mfn-renda').value)||0,
@@ -7583,16 +7678,31 @@ function abrirRedistribuirLeadFunil(leadId) {
   if (!lead) return;
   _funilRedistribuirTarget = leadId;
   const mes = (lead.criadoEm||today()).substring(0,7);
-  const sugestao = melhorPerformanceFunil(lead.vendedor, mes);
   const vendAtual = DB.vendedores.find(v => v.id === lead.vendedor);
   const semVendedor = !lead.vendedor;
+
+  // NOVO: gerente de unidade só redistribui dentro da própria equipe/unidade;
+  // gestor master pode mandar pra qualquer unidade (transferência entre times)
+  const unidadeEscopo = unidadeEscopoAtual();
+  const opcoesBase = (unidadeEscopo ? DB.vendedores.filter(v => v.unidade === unidadeEscopo) : DB.vendedores)
+    .filter(v => v.id !== lead.vendedor);
+  const sugestao = melhorPerformanceFunil(lead.vendedor, mes);
 
   document.getElementById('mfr-title').textContent = semVendedor ? 'Atribuir a um vendedor' : 'Redistribuir lead';
   document.getElementById('mfr-btn-confirmar').textContent = semVendedor ? 'Atribuir' : 'Redistribuir';
   document.getElementById('mfr-sub').textContent = semVendedor ? `${lead.nome} — ainda não atribuído` : `${lead.nome} — atualmente com ${vendAtual?.nome || '—'}`;
   const select = document.getElementById('mfr-vendedor-select');
-  const opcoes = DB.vendedores.filter(v => v.id !== lead.vendedor);
-  select.innerHTML = opcoes.map(v => `<option value="${v.id}" ${v.id===sugestao?'selected':''}>${v.nome}${v.id===sugestao?' (melhor performance no mês)':''}</option>`).join('');
+  if (unidadeEscopo) {
+    select.innerHTML = opcoesBase.map(v => `<option value="${v.id}" ${v.id===sugestao?'selected':''}>${v.nome}${v.id===sugestao?' (melhor performance no mês)':''}</option>`).join('');
+  } else {
+    // Gestor master vê agrupado por unidade, deixando claro quando é transferência
+    const porUnidade = { brusque: [], blumenau: [] };
+    opcoesBase.forEach(v => (porUnidade[v.unidade || 'brusque'] || (porUnidade[v.unidade]=[])).push(v));
+    select.innerHTML = Object.entries(porUnidade).filter(([,l])=>l.length>0).map(([un,lista]) => `
+      <optgroup label="${un === 'blumenau' ? 'Blumenau' : 'Brusque'}">
+        ${lista.map(v => `<option value="${v.id}" ${v.id===sugestao?'selected':''}>${v.nome}${v.id===sugestao?' (melhor performance no mês)':''}</option>`).join('')}
+      </optgroup>`).join('');
+  }
   openModal('m-funil-redistribuir');
 }
 
@@ -7602,11 +7712,28 @@ async function confirmarRedistribuicaoManual() {
   if (!novoVendedor) return;
   const lead = DB.leadsFunil.find(l => l.id === leadId);
   if (!lead) return;
+  const vendNovo = DB.vendedores.find(v => v.id === novoVendedor);
+  const unidadeNova = vendNovo?.unidade || 'brusque';
+  const unidadeAtualLead = lead.unidade || 'brusque';
+  const ehTransferenciaUnidade = unidadeNova !== unidadeAtualLead;
+
   const historico = [...(lead.historico||[]), { etapa: lead.etapa, data: today(), nota: 'Redistribuído manualmente pelo gestor' }];
-  await Servicos.atualizarLeadFunil(leadId, {
+  const patch = {
     vendedor_anterior_id: lead.vendedor, vendedor_id: novoVendedor, tentativas: 0,
     vezes_redistribuido: (lead.vezesRedistribuido||0) + 1, historico_etapas: historico,
-  });
+  };
+
+  // NOVO: se a redistribuição muda de unidade, registra o rastro (só o
+  // gestor master consegue ver isso depois — pro time de destino, o lead só
+  // aparece normal, como se fosse nativo da unidade dele)
+  if (ehTransferenciaUnidade) {
+    patch.unidade = unidadeNova;
+    if (!lead.unidadeOrigem) patch.unidade_origem = unidadeAtualLead;
+    const transferencias = [...(lead.transferenciasUnidade||[]), { de: unidadeAtualLead, para: unidadeNova, data: today(), por: AppState.user.nome }];
+    patch.transferencias_unidade = transferencias;
+  }
+
+  await Servicos.atualizarLeadFunil(leadId, patch);
   closeModal('m-funil-redistribuir');
   closeModal('m-funil-detalhe');
   await carregarDadosIniciais();
