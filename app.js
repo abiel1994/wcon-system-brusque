@@ -710,9 +710,8 @@ const GESTOR_USERS = [
   { email: 'julia.brusque@embracon.com.br', nome: 'Julia' },
   { email: 'fernando.brusque@embracon.com.br', nome: 'Fernando' },
   { email: 'capital8.consultoria@gmail.com', nome: 'Rosangela' },
-  // NOVO: Gerente de Blumenau — mesmo acesso de gestor, mas RESTRITO só à
-  // unidade dele (unidadeEscopo). Sem esse campo = gestor master, vê tudo.
-  // { email: 'gerente.blumenau@exemplo.com', nome: 'Nome do Gerente', unidadeEscopo: 'blumenau' },
+  // Gerente de Blumenau — mesmo acesso de gestor, restrito só à unidade dele
+  { email: 'peixotorafaelhenrique@gmail.com', nome: 'Rafael Henrique', unidadeEscopo: 'blumenau' },
 ];
 
 // NOVO: cada ADM tem o próprio nome (antes o nome "Lilia" estava fixo pra
@@ -1227,7 +1226,7 @@ function buildShell() {
   const isG = (u.role === 'gestor' || u.role === 'adm');
 
   document.getElementById('header-user-name').textContent = u.nome;
-  document.getElementById('header-user-role').textContent = isG ? (u.role === 'adm' ? 'ADM' : 'Gestor') : (u.role === 'supervisor' ? 'Supervisor' : 'Vendedor');
+  document.getElementById('header-user-role').textContent = isG ? (u.role === 'adm' ? 'ADM' : 'Gestor') : (u.role === 'supervisor' ? termoLiderEquipeDoVendedor(u.id) : 'Vendedor');
   document.getElementById('header-user-avatar').innerHTML = u.foto
     ? `<img src="${u.foto}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`
     : initials(u.nome);
@@ -2189,8 +2188,14 @@ function renderClientes() {
   const isG = (u.role === 'gestor' || u.role === 'adm');
   const st  = AppState.modulo.clientes;
 
-  const clientes = DB.clientes || [];
   const vendas   = vendasNoEscopo(u);
+  // NOVO: cliente "pertence" à unidade através do(s) contrato(s) dele — se
+  // tiver unidade selecionada, só mostra quem tem pelo menos 1 contrato
+  // dentro do escopo atual (evita clientes de Brusque aparecendo em Blumenau)
+  const unidadeAtualClientes = unidadeEscopoAtual();
+  const clientes = unidadeAtualClientes
+    ? (DB.clientes || []).filter(c => vendas.some(v => v.cliente_id === c.id))
+    : (DB.clientes || []);
 
   const busca = (st.search || '').toLowerCase();
   const listaFilt = clientes.filter(c =>
@@ -6021,6 +6026,16 @@ ${seletor}
    ═══════════════════════════════════════════════════════════════════════════ */
 // NOVO: retorna a unidade do usuário logado (gestor com unidadeEscopo, ou a
 // unidade do próprio vendedor/supervisor) — null = gestor master, vê tudo
+// NOVO: terminologia varia por unidade — Brusque chama de "Supervisor",
+// Blumenau chama a mesma função (líder de equipe) de "Closer"
+function termoLiderEquipe(unidade) {
+  return unidade === 'blumenau' ? 'Closer' : 'Supervisor';
+}
+function termoLiderEquipeDoVendedor(vendId) {
+  const unidade = DB.vendedores.find(v => v.id === vendId)?.unidade;
+  return termoLiderEquipe(unidade);
+}
+
 function unidadeEscopoAtual() {
   const u = AppState.user;
   if (!u) return null;
@@ -7111,7 +7126,8 @@ function verDemonstrativoSupervisorLideranca(supervisorId, mes) {
   const itens = calcComissaoSupervisorMes(supervisorId, mes);
   const total = itens.reduce((a,i) => a+i.valor, 0);
 
-  document.getElementById('mds-title').textContent = `Demonstrativo — Supervisão · ${mesLabel(mes)}`;
+  const termoDemo = termoLiderEquipeDoVendedor(supervisorId);
+  document.getElementById('mds-title').textContent = `Demonstrativo — ${termoDemo === 'Closer' ? 'Closer' : 'Supervisão'} · ${mesLabel(mes)}`;
   document.getElementById('mds-sub').textContent = `Override sobre a equipe de ${supervisor.nome} — base de cálculo`;
 
   const rows = itens.map(i => `<tr style="border-bottom:1px solid var(--line)">
@@ -7205,7 +7221,8 @@ function renderComissaoLideranca() {
     const itens = calcComissaoSupervisorMes(s.id, st.mesSel);
     const total = itens.reduce((a, i) => a + i.valor, 0);
     const equipe = DB.vendedores.filter(v => v.liderId === s.id).map(v => v.nome.split(' ')[0]).join(', ');
-    cards.push({ key: 'sup_' + s.id, label: `${s.nome} (Supervisão)`, total, meta: `${itens.length} contrato(s) · equipe: ${equipe || '—'}` });
+    const termo = termoLiderEquipeDoVendedor(s.id);
+    cards.push({ key: 'sup_' + s.id, label: `${s.nome} (${termo === 'Closer' ? 'Closer' : 'Supervisão'})`, total, meta: `${itens.length} contrato(s) · equipe: ${equipe || '—'}` });
   });
 
   if (!st.selecionado || !cards.some(c => c.key === st.selecionado)) {
