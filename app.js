@@ -418,7 +418,15 @@ function initials(nome) {
 // NOVO: aceita uma fonte de tabelas alternativa (usada para a comissão pessoal
 // do supervisor, que usa uma tabela de percentuais própria — DB.tabelasSupervisor)
 function calcParcelas(venda, tabelasSource) {
-  const tabs  = tabelasSource || DB.tabelas;
+  let tabs = tabelasSource || DB.tabelas;
+  // NOVO: como agora pode ter mais de uma tabela com o mesmo id (uma por
+  // unidade, ex: "SM" de Brusque e "SM" de Blumenau), desambigua pela
+  // unidade do vendedor da venda antes de procurar a tabela certa.
+  if (!tabelasSource) {
+    const unidadeVenda = DB.vendedores.find(v => v.id === venda.vendedor)?.unidade || 'brusque';
+    const filtradas = tabs.filter(t => (t.unidade || 'brusque') === unidadeVenda);
+    if (filtradas.length > 0) tabs = filtradas;
+  }
   const tab   = tabs.find(t => t.id === venda.tabela);
   const acomp = getPeriodoAcomp(venda.tabela);
   const semD2 = !venda.d2parc;
@@ -4802,9 +4810,9 @@ function renderTabelas() {
         ${blocoGerencia}
         ${isGestorPuro ? `
         <div style="display:flex;gap:8px;margin-top:14px">
-          <button class="btn btn-ghost btn-sm" onclick="editarTabela('${tab.id}')">✎ Editar</button>
-          <button class="btn btn-ghost btn-sm" onclick="verSimulacao('${tab.id}')">◎ Simular venda</button>
-          <button class="btn ${inativa ? 'btn-primary' : 'btn-danger'} btn-sm" onclick="toggleAtivoTabela('${tab.id}')">${inativa ? '✓ Reativar' : '⊘ Desativar'}</button>
+          <button class="btn btn-ghost btn-sm" onclick="editarTabela('${tab.id}','${tab.unidade||'brusque'}')">✎ Editar</button>
+          <button class="btn btn-ghost btn-sm" onclick="verSimulacao('${tab.id}','${tab.unidade||'brusque'}')">◎ Simular venda</button>
+          <button class="btn ${inativa ? 'btn-primary' : 'btn-danger'} btn-sm" onclick="toggleAtivoTabela('${tab.id}','${tab.unidade||'brusque'}')">${inativa ? '✓ Reativar' : '⊘ Desativar'}</button>
         </div>` : ''}
       </div>
     </div>`;
@@ -4909,9 +4917,9 @@ ${cardsLista || `<div class="empty-state"><div class="empty-sub">Nenhuma tabela 
 </div>`;
 }
 
-function editarTabela(tabId) {
-  if (!document.getElementById('m-nova-tab')) { rerenderModule('tabelas'); setTimeout(() => editarTabela(tabId), 150); return; }
-  const tab = DB.tabelas.find(t => t.id === tabId);
+function editarTabela(tabId, unidade) {
+  if (!document.getElementById('m-nova-tab')) { rerenderModule('tabelas'); setTimeout(() => editarTabela(tabId, unidade), 150); return; }
+  const tab = DB.tabelas.find(t => t.id === tabId && (t.unidade||'brusque') === (unidade||'brusque'));
   if (!tab) return;
   document.getElementById('nt-nome').value = tab.nome;
   document.getElementById('nt-ref').value  = tab.ref;
@@ -4923,19 +4931,19 @@ function editarTabela(tabId) {
   previewNovaTabela();
   document.querySelector('#m-nova-tab .modal-title').textContent = 'Editar tabela — ' + tab.nome;
   const btnSalvar = document.querySelector('#m-nova-tab .btn-primary');
-  if (btnSalvar) btnSalvar.onclick = () => salvarEdicaoTabela(tabId);
+  if (btnSalvar) btnSalvar.onclick = () => salvarEdicaoTabela(tabId, unidade);
   openModal('m-nova-tab');
 }
 
-async function salvarEdicaoTabela(tabId) {
+async function salvarEdicaoTabela(tabId, unidade) {
   const nome = document.getElementById('nt-nome').value.trim();
   const ref  = document.getElementById('nt-ref').value.trim();
   if (!nome || !ref) { Dialog.alert('Campos obrigatórios', ['Preencha nome e referência da tabela.']); return; }
   const parcelas = [1,2,3,4,5,6,7,8,9,10,11,12].map(n => parseFloat(document.getElementById(`nt-p${n}`)?.value) || 0);
   try {
-    const { error } = await Supabase.from('tabelas_comissao').update({ nome, ref, parcelas }).eq('id', tabId);
+    const { error } = await Supabase.from('tabelas_comissao').update({ nome, ref, parcelas }).eq('id', tabId).eq('unidade', unidade||'brusque');
     if (error) throw error;
-    const tab = DB.tabelas.find(t => t.id === tabId);
+    const tab = DB.tabelas.find(t => t.id === tabId && (t.unidade||'brusque') === (unidade||'brusque'));
     if (tab) Object.assign(tab, { nome, ref, parcelas });
     closeModal('m-nova-tab');
     Dialog.success('Tabela atualizada', [{ tipo:'destaque', label:'Nome', valor: nome }]);
@@ -4981,12 +4989,12 @@ async function salvarNovaTabela() {
   }
 }
 
-async function toggleAtivoTabela(tabId) {
-  const tab = DB.tabelas.find(t => t.id === tabId);
+async function toggleAtivoTabela(tabId, unidade) {
+  const tab = DB.tabelas.find(t => t.id === tabId && (t.unidade||'brusque') === (unidade||'brusque'));
   if (!tab) return;
   const novoAtivo = !(tab.ativo !== false);
   try {
-    const { error } = await Supabase.from('tabelas_comissao').update({ ativo: novoAtivo }).eq('id', tabId);
+    const { error } = await Supabase.from('tabelas_comissao').update({ ativo: novoAtivo }).eq('id', tabId).eq('unidade', unidade||'brusque');
     if (error) throw error;
     tab.ativo = novoAtivo;
     rerenderModule('tabelas');
@@ -5002,9 +5010,11 @@ function toggleTabela(id) {
 }
 
 let _simulTabela = null;
-function verSimulacao(tabId) {
+let _simulUnidade = null;
+function verSimulacao(tabId, unidade) {
   _simulTabela = tabId;
-  const tab = DB.tabelas.find(t => t.id === tabId);
+  _simulUnidade = unidade || 'brusque';
+  const tab = DB.tabelas.find(t => t.id === tabId && (t.unidade||'brusque') === _simulUnidade);
   document.getElementById('ms-title').textContent = `Simular — ${tab?.nome}`;
   document.getElementById('ms-val').value = '';
   document.getElementById('ms-d2').value = '';
@@ -5019,7 +5029,8 @@ function simularTabela() {
   const res = document.getElementById('ms-result');
   if (!res) return;
   if (!val || !dv || !d2 || !_simulTabela) { res.innerHTML = ''; return; }
-  const pc = calcParcelas({ tabela: _simulTabela, valor: val, dvenda: dv, d2parc: d2, parcelas: [] });
+  const tabelasDaUnidade = DB.tabelas.filter(t => (t.unidade||'brusque') === (_simulUnidade||'brusque'));
+  const pc = calcParcelas({ tabela: _simulTabela, valor: val, dvenda: dv, d2parc: d2, parcelas: [] }, tabelasDaUnidade);
   const ativas = pc.filter(p => p.ativa);
   const total  = ativas.reduce((a, p) => a + p.valor, 0);
   res.innerHTML = `
@@ -5046,30 +5057,82 @@ function simularTabela() {
 // demonstrativo do gestor — usa o total da regra "sem líder de equipe"
 // (tabelas_comissao_gerencia) como referência de qual produto rende mais.
 function getPctGestor(tabId) {
-  const regra = DB.tabelasComissaoGerencia.find(g => g.tabela_id === tabId);
+  const unidade = unidadeEscopoAtual() || 'brusque';
+  const regra = buscarRegraPorTabelaOuRef(DB.tabelasComissaoGerencia, 'tabela_id', tabId, unidade);
   if (!regra) return 0;
   return regra.semSupervisor.reduce((a, p) => a + p, 0);
 }
 
-// NOVO: comissão do SUPERVISOR (líder de equipe) sobre as vendas da sua
-// equipe — sempre usa a coluna comSupervisor (mesma % que o gerente recebe
-// nesse cenário, mas paga separadamente pra cada um).
+// NOVO: comissão PESSOAL do líder de equipe (quando ele fecha uma venda
+// sozinho). Se a unidade dele tiver uma tabela própria cadastrada em
+// tabelas_comissao_supervisor (ex: Blumenau — "Individual"), usa essa. Se
+// não tiver (ex: Brusque hoje), usa a tabela normal de vendedor mesmo —
+// comportamento igual ao que já existia antes.
+function calcComissaoPessoalLider(liderId, mes) {
+  const unidadeLider = DB.vendedores.find(v => v.id === liderId)?.unidade || 'brusque';
+  const vendasPessoais = DB.vendas.filter(v => v.vendedor === liderId && v.status !== 'cancelado');
+  const producao = [], recorrencia = [];
+
+  vendasPessoais.forEach(v => {
+    const regraPropria = buscarRegraPorTabelaOuRef(DB.tabelasSupervisor, 'id', v.tabela, unidadeLider);
+    const tabOriginal = DB.tabelas.find(t => t.id === v.tabela && (t.unidade||'brusque') === unidadeLider);
+    // Se achou regra própria (Individual), usa os percentuais dela; senão
+    // cai na tabela normal de vendedor (comportamento antigo, ex: Brusque)
+    const tabParaCalculo = regraPropria
+      ? [{ id: v.tabela, nome: tabOriginal?.nome || v.tabela, parcelas: regraPropria.parcelas }]
+      : undefined;
+    const tab = regraPropria ? tabParaCalculo[0] : tabOriginal;
+    if (!tab) return;
+    calcParcelas(v, tabParaCalculo).forEach((p, i) => {
+      if (!p.ativa || p.mesRecebimento !== mes) return;
+      const statusParcCliente = v.parcelas[i]?.s;
+      if (p.n > 1 && statusParcCliente !== 'pago') return;
+      const item = { cliente: v.cliente, contrato: v.contrato, tabela: v.tabela, tabelaNome: tab?.nome || v.tabela, n: p.n, parc: p.n, valor: p.valor, pct: p.pct };
+      if (p.n === 1) producao.push(item); else recorrencia.push(item);
+    });
+  });
+  return { producao, recorrencia };
+}
+
+// NOVO: comissão do líder de equipe (Supervisor/Closer) sobre as vendas da
+// sua equipe. Se a unidade tiver uma tabela própria de override cadastrada
+// (tabelas_override_lider — ex: Blumenau), usa ela, com todas as parcelas
+// que tiverem percentual. Se não tiver (ex: Brusque hoje), cai no cálculo
+// antigo — mesma % que o gerente recebe nesse cenário (comSupervisor),
+// limitado às 3 primeiras parcelas.
+// NOVO: busca numa lista de regras (override/gerência/supervisor) primeiro
+// pelo id exato da tabela (ex: "SM_BLU"), e se não achar, tenta pela
+// REFERÊNCIA daquela tabela (ex: "REF7") — permite cadastrar só 1 linha por
+// grupo de referência em vez de repetir pra cada produto, já que dentro do
+// mesmo grupo os percentuais costumam ser iguais.
+function buscarRegraPorTabelaOuRef(lista, campoId, tabelaVendaId, unidade) {
+  const exata = lista.find(r => r[campoId] === tabelaVendaId && (r.unidade || 'brusque') === unidade);
+  if (exata) return exata;
+  const tabInfo = DB.tabelas.find(t => t.id === tabelaVendaId && (t.unidade||'brusque') === unidade);
+  if (!tabInfo?.ref) return null;
+  return lista.find(r => r[campoId] === tabInfo.ref && (r.unidade || 'brusque') === unidade) || null;
+}
+
 function calcComissaoSupervisorMes(supervisorId, mes) {
   const itens = [];
   const idsEquipe = DB.vendedores.filter(v => v.liderId === supervisorId).map(v => v.id);
+  const unidadeLider = DB.vendedores.find(v => v.id === supervisorId)?.unidade || 'brusque';
   DB.vendas.forEach(v => {
     if (v.status === 'cancelado') return;
     if (!idsEquipe.includes(v.vendedor)) return;
-    const regra = DB.tabelasComissaoGerencia.find(g => g.tabela_id === v.tabela);
-    if (!regra) return;
     const tab = DB.tabelas.find(t => t.id === v.tabela);
 
+    const overrideProprio = buscarRegraPorTabelaOuRef(DB.tabelasOverrideLider, 'tabela_id', v.tabela, unidadeLider);
+    const regraAntiga = !overrideProprio ? DB.tabelasComissaoGerencia.find(g => g.tabela_id === v.tabela && (g.unidade || 'brusque') === unidadeLider) : null;
+    if (!overrideProprio && !regraAntiga) return;
+
     calcParcelas(v).forEach((p, i) => {
-      if (!p.ativa || p.n > 3) return;
+      if (!p.ativa) return;
+      if (!overrideProprio && p.n > 3) return; // regra antiga só vale nas 3 primeiras
       if (p.mesRecebimento !== mes) return;
       const statusParcCliente = v.parcelas[i]?.s;
       if (p.n > 1 && statusParcCliente !== 'pago') return;
-      const pct = regra.comSupervisor[p.n - 1];
+      const pct = overrideProprio ? overrideProprio.parcelas[p.n - 1] : regraAntiga.comSupervisor[p.n - 1];
       if (!pct) return;
       itens.push({
         cliente: v.cliente, contrato: v.contrato, vendedor: v.vendedor,
@@ -5088,10 +5151,11 @@ function calcRemuneracaoMes(mes) {
   vendasNoEscopo({ role: 'gestor' }).forEach(v => {
     if (v.status === 'cancelado') return;
     const tab = DB.tabelas.find(t => t.id === v.tabela);
-    const regra = DB.tabelasComissaoGerencia.find(g => g.tabela_id === v.tabela);
+    const vend = DB.vendedores.find(x => x.id === v.vendedor);
+    const unidadeVenda = vend?.unidade || 'brusque';
+    const regra = buscarRegraPorTabelaOuRef(DB.tabelasComissaoGerencia, 'tabela_id', v.tabela, unidadeVenda);
     if (!regra) return; // tabela sem regra de gerência cadastrada — não gera comissão de gerência
 
-    const vend = DB.vendedores.find(x => x.id === v.vendedor);
     const temLider = !!(vend && vend.liderId); // tem líder de equipe acima dele?
     const pcts = temLider ? regra.comSupervisor : regra.semSupervisor;
 
@@ -7218,11 +7282,14 @@ function renderComissaoLideranca() {
   }
   const listaSup = isG ? supervisores : supervisores.filter(s => s.id === u.id);
   listaSup.forEach(s => {
-    const itens = calcComissaoSupervisorMes(s.id, st.mesSel);
-    const total = itens.reduce((a, i) => a + i.valor, 0);
+    const itensOverride = calcComissaoSupervisorMes(s.id, st.mesSel);
+    const totalOverride = itensOverride.reduce((a, i) => a + i.valor, 0);
+    const { producao: prodPessoal, recorrencia: recPessoal } = calcComissaoPessoalLider(s.id, st.mesSel);
+    const totalPessoal = prodPessoal.reduce((a,i)=>a+i.valor,0) + recPessoal.reduce((a,i)=>a+i.valor,0);
+    const total = totalOverride + totalPessoal;
     const equipe = DB.vendedores.filter(v => v.liderId === s.id).map(v => v.nome.split(' ')[0]).join(', ');
     const termo = termoLiderEquipeDoVendedor(s.id);
-    cards.push({ key: 'sup_' + s.id, label: `${s.nome} (${termo === 'Closer' ? 'Closer' : 'Supervisão'})`, total, meta: `${itens.length} contrato(s) · equipe: ${equipe || '—'}` });
+    cards.push({ key: 'sup_' + s.id, label: `${s.nome} (${termo === 'Closer' ? 'Closer' : 'Supervisão'})`, total, meta: `${itensOverride.length} contrato(s) equipe + ${prodPessoal.length+recPessoal.length} pessoal(is) · equipe: ${equipe || '—'}` });
   });
 
   if (!st.selecionado || !cards.some(c => c.key === st.selecionado)) {
