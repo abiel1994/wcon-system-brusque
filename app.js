@@ -3289,11 +3289,11 @@ function renderComissao() {
   const isSup = u.role === 'supervisor';
   const st  = AppState.modulo.comissao;
 
-  const todosVendedores = (isG || isSup)
+  const todosVendedores = isG
     ? (st.filterVend ? [DB.vendedores.find(v => v.id === st.filterVend)] : vendedoresNoEscopo(u)).filter(Boolean)
     : [DB.vendedores.find(v => v.id === u.id)].filter(Boolean);
 
-  const todasVendas = (isG || isSup)
+  const todasVendas = isG
     ? (st.filterVend ? DB.vendas.filter(v => v.vendedor === st.filterVend) : vendasNoEscopo(u))
     : DB.vendas.filter(v => v.vendedor === u.id);
 
@@ -3346,7 +3346,7 @@ function renderComissao() {
     return allPago ? ' — ✓ Pago' : ' — Pendente';
   });
 
-  const vendorTabs = (isG || isSup) ? renderVendorFilter(st.filterVend, "AppState.modulo.comissao.filterVend", 'comissao', vendedoresNoEscopo(u)) : '';
+  const vendorTabs = isG ? renderVendorFilter(st.filterVend, "AppState.modulo.comissao.filterVend", 'comissao', vendedoresNoEscopo(u)) : '';
 
   const fechCards = todosVendedores.map(vend => {
     const vendasVend = vendasDoVendedor(vend.id).filter(v => v.status !== 'cancelado');
@@ -6132,6 +6132,12 @@ function leadsVisiveisFunil() {
   if (isG) {
     if (st.filtroVend === '__sem_vendedor__') return base.filter(l => !l.vendedor);
     return st.filtroVend ? base.filter(l => l.vendedor === st.filtroVend) : base;
+  }
+  // NOVO: supervisor/líder de equipe (ex: Paulo) vê os próprios leads +
+  // os leads de quem reporta a ele (a equipe toda), não só os dele
+  if (u.role === 'supervisor') {
+    const idsEquipe = DB.vendedores.filter(v => v.liderId === u.id).map(v => v.id);
+    return base.filter(l => l.vendedor === u.id || idsEquipe.includes(l.vendedor));
   }
   return base.filter(l => l.vendedor === u.id);
 }
