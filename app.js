@@ -171,6 +171,7 @@ const DB = {
   leadsFunil: [],
   funilRodizio: { ultimoIndice: -1 },
   funilLigacoes: {}, // { vendedorId: { 'YYYY-MM-DD': qtd } }
+  treinamentos: [],
   funilIA: {},        // { 'YYYY-MM-DD': { contatos, respostas, reunioes } }
 
   nextFechGestorId: 1,
@@ -315,6 +316,7 @@ const AppState = {
     funil:         { filtroVend: null, mesSel: null, colunasAbertas: {}, filtroMesPipeline: null },
     agendaFunil:   { mesCalendario: null, diaSelecionado: null },
     leadsPainel:   { mesSel: null },
+    treinamentos:  { filtroCategoria: 'all' },
     comissaoSupervisor: { mesSel: null, supervisorId: null },
     comissaoLideranca: { mesSel: null, selecionado: null },
     clientes:      { search: '' },
@@ -674,6 +676,7 @@ const Router = {
 
     painelExecutivo: { label: 'Painel Executivo', icon: '', section: 'gestor', render: renderPainelExecutivoFunil },
     leadsPainel:   { label: 'Leads', icon: '', section: 'gestor', render: renderLeadsPainelFunil },
+    treinamentos:  { label: 'Treinamentos', icon: '', section: 'gestor', render: renderTreinamentos },
     transferenciasUnidade: { label: 'Transferências entre Unidades', icon: '', section: 'gestor', render: renderTransferenciasUnidade },
 
     tabelas:       { label: 'Tabelas',       icon: '≡', section: 'configuracao', render: renderTabelas },
@@ -1268,7 +1271,7 @@ function buildSidebar() {
   };
 
   const visibles = isG
-    ? ['dashboard','trabalho','vendedores','clientes','funil','agendaFunil','relatorio','comissao','comissaoLideranca','inadimplencia','estornos','painelExecutivo','leadsPainel',...(!u.unidadeEscopo?['transferenciasUnidade']:[]),'tabelas','configuracoes']
+    ? ['dashboard','trabalho','vendedores','clientes','funil','agendaFunil','relatorio','comissao','comissaoLideranca','inadimplencia','estornos','painelExecutivo','leadsPainel',...(!u.unidadeEscopo?['transferenciasUnidade']:[]),'treinamentos','tabelas','configuracoes']
     : isSup
       ? ['dashboard','trabalho','funil','agendaFunil','relatorio','comissao','comissaoLideranca','inadimplencia','estornos','tabelas']
       : ['dashboard','trabalho','funil','agendaFunil','relatorio','comissao','inadimplencia','estornos','tabelas'];
@@ -6995,6 +6998,222 @@ function renderTransferenciasUnidade() {
   </div>
 </div>
 `;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MÓDULO: TREINAMENTOS — scripts e vídeos da equipe
+   ═══════════════════════════════════════════════════════════════════════════ */
+const TREINAMENTO_CATEGORIAS = [
+  { key: 'abordagem',    label: 'Abordagem',    cor: '#0C447C', bg: '#E6F1FB' },
+  { key: 'qualificacao', label: 'Qualificação', cor: '#26215C', bg: '#EEEDFE' },
+  { key: 'followup',     label: 'Follow-up',    cor: '#7A4A0A', bg: '#FFF8E8' },
+  { key: 'fechamento',   label: 'Fechamento',   cor: '#27500A', bg: '#EAF3DE' },
+];
+function treinamentoCategoriaInfo(key) {
+  return TREINAMENTO_CATEGORIAS.find(c => c.key === key) || { label: key, cor: 'var(--text2)', bg: 'var(--ink3)' };
+}
+// Extrai o id de vídeo do YouTube ou Vimeo de qualquer formato de link comum
+function extrairEmbedVideo(url) {
+  if (!url) return null;
+  const yt = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+  if (yt) return { tipo: 'youtube', src: `https://www.youtube.com/embed/${yt[1]}`, thumb: `https://img.youtube.com/vi/${yt[1]}/hqdefault.jpg` };
+  const vm = url.match(/vimeo\.com\/(?:video\/)?(\d+)/);
+  if (vm) return { tipo: 'vimeo', src: `https://player.vimeo.com/video/${vm[1]}`, thumb: null };
+  return null;
+}
+// Só o Abiel pode gerenciar (adicionar/excluir) conteúdo — por enquanto
+function podeGerenciarTreinamentos() {
+  return (AppState.user?.email || '').toLowerCase() === 'abielnoguera@gmail.com';
+}
+
+function renderTreinamentos() {
+  const st = AppState.modulo.treinamentos;
+  const podeGerenciar = podeGerenciarTreinamentos();
+
+  const lista = st.filtroCategoria === 'all' ? DB.treinamentos : DB.treinamentos.filter(t => t.categoria === st.filtroCategoria);
+
+  const pills = [
+    ['all', 'Todos', DB.treinamentos.length],
+    ...TREINAMENTO_CATEGORIAS.map(c => [c.key, c.label, DB.treinamentos.filter(t => t.categoria === c.key).length]),
+  ].map(([key, label, cnt]) => `
+    <div onclick="AppState.modulo.treinamentos.filtroCategoria='${key}';rerenderModule('treinamentos')"
+      style="background:${st.filtroCategoria===key?'#1A1D24':'#fff'};color:${st.filtroCategoria===key?'#fff':'var(--text2)'};border:1px solid ${st.filtroCategoria===key?'#1A1D24':'var(--line)'};font-size:12px;font-weight:600;padding:7px 14px;border-radius:20px;cursor:pointer;white-space:nowrap">${label} (${cnt})</div>
+  `).join('');
+
+  const cards = lista.map(t => {
+    const cat = treinamentoCategoriaInfo(t.categoria);
+    const embed = t.tipo === 'video' ? extrairEmbedVideo(t.urlVideo) : null;
+    const thumbHtml = t.tipo === 'video'
+      ? `<div style="position:relative;background:#1A1D24;aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;background-size:cover;background-position:center;${embed?.thumb ? `background-image:url('${embed.thumb}')` : ''}">
+          <div style="width:44px;height:44px;border-radius:50%;background:var(--brand);display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px">▶</div>
+        </div>`
+      : `<div style="background:var(--ink3);aspect-ratio:16/9;display:flex;align-items:center;justify-content:center"><div style="width:44px;height:44px;border-radius:12px;background:var(--green-dim,#EAF3DE);display:flex;align-items:center;justify-content:center;font-size:18px">📄</div></div>`;
+    return `<div style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.06);cursor:pointer" onclick="abrirDetalheTreinamento('${t.id}')">
+      ${thumbHtml}
+      <div style="padding:12px 14px">
+        <span style="background:${cat.bg};color:${cat.cor};font-size:9px;font-weight:700;padding:2px 8px;border-radius:4px">${cat.label.toUpperCase()}</span>
+        <div style="font-size:13px;font-weight:700;margin-top:8px">${t.titulo}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px">${t.tipo === 'video' ? 'Vídeo' : 'Texto'} · ${fmtDate((t.criadoEm||'').substring(0,10))}</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  return `
+<div class="page-header">
+  <div>
+    <div class="page-title">Treinamentos</div>
+    <div class="page-sub">// scripts e vídeos da equipe</div>
+  </div>
+  <div class="page-actions">
+    ${podeGerenciar ? `<button class="btn btn-primary btn-sm" onclick="abrirNovoTreinamento()">+ Novo conteúdo</button>` : ''}
+  </div>
+</div>
+
+<div style="display:flex;gap:6px;margin-bottom:18px;flex-wrap:wrap">${pills}</div>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px">
+  ${cards || `<div class="empty-state" style="grid-column:1/-1"><div class="empty-icon">🎓</div><div class="empty-title">Nenhum conteúdo ainda</div><div class="empty-sub">${podeGerenciar ? 'Clique em "+ Novo conteúdo" pra começar' : 'Em breve teremos materiais aqui'}</div></div>`}
+</div>
+
+<!-- Modal de detalhe -->
+<div class="overlay" id="m-treinamento-ver">
+  <div class="modal" style="width:680px">
+    <button class="modal-close" onclick="closeModal('m-treinamento-ver')">✕</button>
+    <div id="mtv-conteudo"></div>
+  </div>
+</div>
+
+<!-- Modal de novo conteúdo -->
+<div class="overlay" id="m-treinamento-novo">
+  <div class="modal" style="max-width:520px">
+    <button class="modal-close" onclick="closeModal('m-treinamento-novo')">✕</button>
+    <div class="modal-title">Novo conteúdo</div>
+    <div class="modal-sub">Cadastre um script ou vídeo de treinamento</div>
+
+    <div class="form-group"><label>Título *</label><input id="mtn-titulo" placeholder="Ex: Como abrir a primeira ligação"></div>
+
+    <div class="form-row cols-2">
+      <div class="form-group"><label>Categoria</label>
+        <select id="mtn-categoria">
+          ${TREINAMENTO_CATEGORIAS.map(c => `<option value="${c.key}">${c.label}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group"><label>Tipo</label>
+        <select id="mtn-tipo" onchange="toggleTipoTreinamento()">
+          <option value="video">Vídeo (YouTube/Vimeo)</option>
+          <option value="texto">Texto / Script</option>
+        </select>
+      </div>
+    </div>
+
+    <div id="mtn-wrap-video" class="form-group"><label>Link do vídeo</label><input id="mtn-url" placeholder="https://youtube.com/watch?v=..."></div>
+    <div id="mtn-wrap-texto" class="form-group" style="display:none"><label>Conteúdo do script</label><textarea id="mtn-conteudo" rows="6" placeholder="Cole o script aqui..."></textarea></div>
+
+    <div class="form-group"><label>Público-alvo</label>
+      <select id="mtn-publico">
+        <option value="todos">Todos</option>
+        <option value="vendedor">Vendedores</option>
+        <option value="lider">Líderes de equipe</option>
+        <option value="gestor">Gestores</option>
+      </select>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('m-treinamento-novo')">Cancelar</button>
+      <button class="btn btn-primary" onclick="salvarNovoTreinamento()">Salvar</button>
+    </div>
+  </div>
+</div>
+`;
+}
+
+function toggleTipoTreinamento() {
+  const tipo = document.getElementById('mtn-tipo').value;
+  document.getElementById('mtn-wrap-video').style.display = tipo === 'video' ? 'block' : 'none';
+  document.getElementById('mtn-wrap-texto').style.display = tipo === 'texto' ? 'block' : 'none';
+}
+
+function abrirNovoTreinamento() {
+  if (!podeGerenciarTreinamentos()) return;
+  document.getElementById('mtn-titulo').value = '';
+  document.getElementById('mtn-url').value = '';
+  document.getElementById('mtn-conteudo').value = '';
+  document.getElementById('mtn-tipo').value = 'video';
+  toggleTipoTreinamento();
+  openModal('m-treinamento-novo');
+}
+
+async function salvarNovoTreinamento() {
+  const titulo = document.getElementById('mtn-titulo').value.trim();
+  const categoria = document.getElementById('mtn-categoria').value;
+  const tipo = document.getElementById('mtn-tipo').value;
+  const url = document.getElementById('mtn-url').value.trim();
+  const conteudo = document.getElementById('mtn-conteudo').value.trim();
+  const publico = document.getElementById('mtn-publico').value;
+
+  if (!titulo) { Dialog.alert('Campo obrigatório', ['Informe o título.']); return; }
+  if (tipo === 'video' && !url) { Dialog.alert('Campo obrigatório', ['Cole o link do vídeo.']); return; }
+  if (tipo === 'texto' && !conteudo) { Dialog.alert('Campo obrigatório', ['Escreva o conteúdo do script.']); return; }
+  if (tipo === 'video' && !extrairEmbedVideo(url)) { Dialog.alert('Link inválido', ['Não reconheci esse link como YouTube ou Vimeo. Confira e tente de novo.']); return; }
+
+  const btn = document.querySelector('#m-treinamento-novo .btn-primary');
+  if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
+
+  try {
+    const payload = {
+      titulo, categoria, tipo,
+      url_video: tipo === 'video' ? url : null,
+      conteudo: tipo === 'texto' ? conteudo : null,
+      publico_alvo: publico,
+      criado_por: AppState.user.nome,
+    };
+    const data = await Servicos.salvarTreinamento(payload);
+    if (!data) throw new Error('Não foi possível salvar.');
+    DB.treinamentos.unshift({
+      id: data.id, titulo, categoria, tipo, urlVideo: payload.url_video||'', conteudo: payload.conteudo||'',
+      publicoAlvo: publico, criadoPor: AppState.user.nome, criadoEm: data.criado_em || new Date().toISOString(),
+    });
+    closeModal('m-treinamento-novo');
+    rerenderModule('treinamentos');
+  } catch(e) {
+    console.error('Erro ao salvar treinamento:', e);
+    Dialog.alert('Erro ao salvar', ['Não foi possível salvar no banco de dados.']);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Salvar'; }
+  }
+}
+
+function abrirDetalheTreinamento(id) {
+  const t = DB.treinamentos.find(x => x.id === id);
+  if (!t) return;
+  const cat = treinamentoCategoriaInfo(t.categoria);
+  const embed = t.tipo === 'video' ? extrairEmbedVideo(t.urlVideo) : null;
+  const podeGerenciar = podeGerenciarTreinamentos();
+
+  const corpo = t.tipo === 'video'
+    ? (embed
+        ? `<div style="border-radius:10px;overflow:hidden;background:#000"><iframe src="${embed.src}" style="width:100%;aspect-ratio:16/9;border:0" allowfullscreen allow="autoplay; encrypted-media"></iframe></div>`
+        : `<div class="alert alert-amber">Não consegui identificar esse link de vídeo.</div>`)
+    : `<div style="background:var(--ink3);border-radius:10px;padding:16px;font-size:13px;line-height:1.7;white-space:pre-wrap">${t.conteudo}</div>`;
+
+  document.getElementById('mtv-conteudo').innerHTML = `
+    <span class="chip" style="background:${cat.bg};color:${cat.cor};font-size:9px;font-weight:700">${cat.label.toUpperCase()}</span>
+    <div style="font-size:17px;font-weight:800;margin-top:8px">${t.titulo}</div>
+    <div style="font-size:11px;color:var(--text3);margin-bottom:14px">Adicionado por ${t.criadoPor||'—'} · ${fmtDate((t.criadoEm||'').substring(0,10))}</div>
+    ${corpo}
+    ${podeGerenciar ? `<div class="modal-actions"><button class="btn btn-ghost" style="color:var(--brand)" onclick="excluirTreinamentoUI('${t.id}')">✕ Excluir</button></div>` : ''}
+  `;
+  openModal('m-treinamento-ver');
+}
+
+async function excluirTreinamentoUI(id) {
+  const _ok = await Dialog.danger('Excluir conteúdo', ['Esta ação não pode ser desfeita.']);
+  if (!_ok) return;
+  const sucesso = await Servicos.excluirTreinamento(id);
+  if (!sucesso) { Dialog.alert('Erro ao excluir', ['Não foi possível excluir no banco de dados.']); return; }
+  DB.treinamentos = DB.treinamentos.filter(t => t.id !== id);
+  closeModal('m-treinamento-ver');
+  rerenderModule('treinamentos');
 }
 
 function renderLeadsPainelFunil() {
