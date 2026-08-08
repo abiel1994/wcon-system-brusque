@@ -1270,8 +1270,10 @@ function buildSidebar() {
     configuracao: 'Sistema',
   };
 
+  const temTreinamentos = isG; // por enquanto só gestor — depois liberamos pra todos
+
   const visibles = isG
-    ? ['dashboard','trabalho','vendedores','clientes','funil','agendaFunil','relatorio','comissao','comissaoLideranca','inadimplencia','estornos','painelExecutivo','leadsPainel',...(!u.unidadeEscopo?['transferenciasUnidade']:[]),'treinamentos','tabelas','configuracoes']
+    ? ['dashboard','trabalho','vendedores','clientes','funil','agendaFunil','relatorio','comissao','comissaoLideranca','inadimplencia','estornos','painelExecutivo','leadsPainel',...(!u.unidadeEscopo?['transferenciasUnidade']:[]),'tabelas','configuracoes']
     : isSup
       ? ['dashboard','trabalho','funil','agendaFunil','relatorio','comissao','comissaoLideranca','inadimplencia','estornos','tabelas']
       : ['dashboard','trabalho','funil','agendaFunil','relatorio','comissao','inadimplencia','estornos','tabelas'];
@@ -1295,7 +1297,24 @@ function buildSidebar() {
     grupos[sec].push(id);
   });
 
+  // NOVO: card de Treinamentos — separado das seções, sempre em destaque no
+  // topo do menu (é onboarding, precisa ser a primeira coisa que a pessoa vê)
   let html = '';
+  if (temTreinamentos) {
+    const ativoTreino = AppState.currentModule === 'treinamentos' ? ' active' : '';
+    html += `<div class="nav-treinamentos-destaque${ativoTreino}" id="nav-treinamentos" onclick="Router.navigate('treinamentos')">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:16px">🎓</span>
+          <div>
+            <div style="font-size:12px;font-weight:800;color:#fff">Treinamentos</div>
+            <div style="font-size:9px;color:#ffffffcc">Onboarding · comece aqui</div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }
+
   ordemSecoes.forEach(sec => {
     const itens = grupos[sec];
     const temAtual = itens.includes(AppState.currentModule);
