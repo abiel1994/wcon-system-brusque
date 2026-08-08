@@ -121,6 +121,40 @@ const Servicos = {
     return data;
   },
 
+  // NOVO: override do líder de equipe (Supervisor/Closer) sobre a produção
+  // da equipe, tabela completa por produto/parcela — quando existir uma
+  // linha aqui pra tabela+unidade, tem prioridade sobre o cálculo antigo
+  async listarTabelasOverrideLider() {
+    const { data, error } = await sb.from('tabelas_override_lider').select('*');
+    if (error) { console.warn('tabelas_override_lider não encontrada (opcional):', error.message); return []; }
+    return data;
+  },
+
+  async listarTabelasComissaoSupervisor() {
+    const { data, error } = await sb.from('tabelas_comissao_supervisor').select('*');
+    if (error) { console.warn('tabelas_comissao_supervisor não encontrada (opcional):', error.message); return []; }
+    return data;
+  },
+
+  /* ── TREINAMENTOS ────────────────────────────────────────────────────────── */
+  async listarTreinamentos() {
+    const { data, error } = await sb.from('treinamentos').select('*').order('criado_em', { ascending: false });
+    if (error) { console.warn('treinamentos não encontrada (opcional):', error.message); return []; }
+    return data;
+  },
+
+  async salvarTreinamento(t) {
+    const { data, error } = await sb.from('treinamentos').insert(t).select().single();
+    if (error) { console.error('Erro ao salvar treinamento:', error); return null; }
+    return data;
+  },
+
+  async excluirTreinamento(id) {
+    const { error } = await sb.from('treinamentos').delete().eq('id', id);
+    if (error) { console.error('Erro ao excluir treinamento:', error); return false; }
+    return true;
+  },
+
   /* ── VENDAS ──────────────────────────────────────────────────────────────── */
   async listarVendas(filtros = {}) {
     let query = sb.from('vendas').select(`
@@ -359,11 +393,13 @@ const Servicos = {
 async function carregarDadosIniciais() {
   mostrarCarregando(true);
   try {
-    const [vendedores, clientes, tabelas, tabelasComissaoGerencia, vendas, fechGestor, fechVendedores, acessoTabelas, leadsFunil, rodizio, ligacoesFunil, iaFunil] = await Promise.all([
+    const [vendedores, clientes, tabelas, tabelasComissaoGerencia, tabelasOverrideLider, tabelasComissaoSupervisorDB, vendas, fechGestor, fechVendedores, acessoTabelas, leadsFunil, rodizio, ligacoesFunil, iaFunil, treinamentos] = await Promise.all([
       Servicos.listarVendedores(),
       Servicos.listarClientes(),
       Servicos.listarTabelas(),
       Servicos.listarTabelasComissaoGerencia(),
+      Servicos.listarTabelasOverrideLider(),
+      Servicos.listarTabelasComissaoSupervisor(),
       Servicos.listarVendas(),
       Servicos.listarFechamentosGestor(),
       Servicos.listarFechamentos(),
@@ -372,6 +408,7 @@ async function carregarDadosIniciais() {
       Servicos.getRodizio(),
       Servicos.listarLigacoesFunil(),
       Servicos.listarIAFunil(),
+      Servicos.listarTreinamentos(),
     ]);
 
     // ── Vendedores ──────────────────────────────────────────────────────────
@@ -416,12 +453,47 @@ async function carregarDadosIniciais() {
     if (tabelasComissaoGerencia && tabelasComissaoGerencia.length > 0) {
       DB.tabelasComissaoGerencia = tabelasComissaoGerencia.map(g => ({
         tabela_id:     g.tabela_id,
+        unidade:       g.unidade || 'brusque',
         comSupervisor: Array.isArray(g.com_supervisor) ? g.com_supervisor : JSON.parse(g.com_supervisor || '[]'),
         semSupervisor: Array.isArray(g.sem_supervisor) ? g.sem_supervisor : JSON.parse(g.sem_supervisor || '[]'),
       }));
     }
     // Se a tabela não existir no banco ainda, DB.tabelasComissaoGerencia
     // definida fixa no app.js continua valendo (fallback).
+
+    // NOVO: override do líder de equipe sobre a produção da equipe, tabela
+    // completa por produto — só existe pra unidades que precisam (ex:
+    // Blumenau). Se vazio, o cálculo cai pro comSupervisor de cima (Brusque).
+    DB.tabelasOverrideLider = (tabelasOverrideLider || []).map(t => ({
+      tabela_id: t.tabela_id,
+      unidade:   t.unidade || 'brusque',
+      parcelas:  Array.isArray(t.parcelas) ? t.parcelas : JSON.parse(t.parcelas || '[]'),
+    }));
+
+    // NOVO: tabela pessoal do líder (quando ele fecha venda sozinho), agora
+    // com unidade — sobrescreve o fallback fixo do app.js se vier do banco
+    if (tabelasComissaoSupervisorDB && tabelasComissaoSupervisorDB.length > 0) {
+      DB.tabelasSupervisor = tabelasComissaoSupervisorDB.map(t => ({
+        id:       t.id,
+        nome:     t.nome,
+        unidade:  t.unidade || 'brusque',
+        parcelas: Array.isArray(t.parcelas) ? t.parcelas : JSON.parse(t.parcelas || '[]'),
+      }));
+    }
+
+    // NOVO: treinamentos (scripts e vídeos)
+    DB.treinamentos = (treinamentos || []).map(t => ({
+      id:          t.id,
+      titulo:      t.titulo,
+      categoria:   t.categoria || 'abordagem',
+      tipo:        t.tipo || 'video',
+      urlVideo:    t.url_video || '',
+      conteudo:    t.conteudo || '',
+      publicoAlvo: t.publico_alvo || 'todos',
+      unidade:     t.unidade || null,
+      criadoPor:   t.criado_por || '',
+      criadoEm:    t.criado_em || null,
+    }));
 
     // ── Vendas ──────────────────────────────────────────────────────────────
     DB.vendas = vendas.map(v => {
